@@ -1,0 +1,13 @@
+<Application x:Class="PaperPilot.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <SolidColorBrush x:Key="PilotBlue" Color="#0059FD" />
+        <SolidColorBrush x:Key="DeepBlue" Color="#0142C0" />
+        <SolidColorBrush x:Key="Navy" Color="#0D2768" />
+        <SolidColorBrush x:Key="Cream" Color="#FEF7E6" />
+        <SolidColorBrush x:Key="Periwinkle" Color="#ABBFEA" />
+        <SolidColorBrush x:Key="Grey" Color="#8A8F98" />
+    </Application.Resources>
+</Application>
