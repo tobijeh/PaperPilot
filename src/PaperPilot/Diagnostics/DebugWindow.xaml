@@ -27,13 +27,25 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="110" />
         </Grid.RowDefinitions>
 
+        <!-- Update banner (hidden unless an update is available) -->
+        <Border x:Name="UpdateBanner" Grid.Row="0" Visibility="Collapsed" Background="{StaticResource Navy}"
+                CornerRadius="6" Padding="10,6" Margin="0,0,0,10">
+            <DockPanel LastChildFill="True">
+                <Button x:Name="UpdateNowButton" DockPanel.Dock="Right" Content="Update now" Click="UpdateNow_Click" Margin="8,0,0,0" />
+                <ProgressBar x:Name="UpdateProgress" DockPanel.Dock="Right" Width="140" Height="8" Minimum="0" Maximum="1"
+                             Visibility="Collapsed" Foreground="{StaticResource PilotBlue}" Background="{StaticResource Periwinkle}" />
+                <TextBlock x:Name="UpdateText" Foreground="{StaticResource Cream}" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
         <!-- Instructions -->
-        <Border Grid.Row="0" BorderBrush="{StaticResource Periwinkle}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+        <Border Grid.Row="1" BorderBrush="{StaticResource Periwinkle}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
             <TextBlock TextWrapping="Wrap">
                 <Run FontWeight="SemiBold">How to test:</Run>
                 click into the window you preach from (e.g. Google Docs), then press
@@ -44,12 +56,12 @@
         </Border>
 
         <!-- Target info -->
-        <Border Grid.Row="1" BorderBrush="{StaticResource Periwinkle}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
+        <Border Grid.Row="2" BorderBrush="{StaticResource Periwinkle}" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,10">
             <TextBlock x:Name="TargetText" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Text="No target yet." />
         </Border>
 
         <!-- Controls -->
-        <WrapPanel Grid.Row="2" Margin="0,0,0,10" VerticalAlignment="Center">
+        <WrapPanel Grid.Row="3" Margin="0,0,0,10" VerticalAlignment="Center">
             <Button x:Name="ReadButton" Content="Read now" Click="ReadButton_Click" IsEnabled="False" />
             <Button Content="Lock in 3 s" Click="LockDelayedButton_Click"
                     ToolTip="Gives you 3 seconds to click into the target window, then locks onto it." />
@@ -59,10 +71,11 @@
             <Button Content="Save snapshot" Click="SaveSnapshot_Click" Background="{StaticResource Navy}"
                     ToolTip="Saves the captured image and the line list to the log folder." />
             <Button Content="Open log folder" Click="OpenLogFolder_Click" Background="{StaticResource Navy}" />
+            <Button x:Name="CheckUpdatesButton" Content="Check for updates" Click="CheckUpdates_Click" Background="{StaticResource Navy}" />
         </WrapPanel>
 
         <!-- Lines + preview -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="4">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="6" />
@@ -96,9 +109,9 @@
             </Border>
         </Grid>
 
-        <TextBlock x:Name="StatusText" Grid.Row="4" Margin="0,8,0,4" TextWrapping="Wrap" FontWeight="SemiBold" Text="Ready." />
+        <TextBlock x:Name="StatusText" Grid.Row="5" Margin="0,8,0,4" TextWrapping="Wrap" FontWeight="SemiBold" Text="Ready." />
 
-        <TextBox x:Name="LogBox" Grid.Row="5" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
+        <TextBox x:Name="LogBox" Grid.Row="6" IsReadOnly="True" FontFamily="Consolas" FontSize="11"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                  BorderBrush="{StaticResource Periwinkle}" Background="White" Foreground="{StaticResource Navy}" />
     </Grid>

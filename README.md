@@ -19,10 +19,14 @@ See [`docs/PaperPilot_Build_Spec.md`](docs/PaperPilot_Build_Spec.md) for the ful
 
 ## Running it
 
-**Option A — download the exe.** Every push builds a self-contained `PaperPilot.exe` on GitHub
-Actions (no .NET install needed). Open the repo's *Actions* tab → latest *build* run →
-*Artifacts* → `PaperPilot-win-x64`, unzip, run `PaperPilot.exe`. Windows SmartScreen may warn
-because the exe isn't signed yet: *More info → Run anyway*.
+**Option A — download the exe.** Grab `PaperPilot.exe` from the newest
+[release](https://github.com/tobijeh/PaperPilot/releases/latest) (no .NET install needed) and put it
+in a folder you own, e.g. `Documents\PaperPilot`. Windows SmartScreen may warn because the exe isn't
+signed yet: *More info → Run anyway*.
+
+**Updates:** every push to `main` publishes a new release. Paper Pilot checks once at startup (and
+via *Check for updates*); when a newer version exists a banner appears — click *Update now* and it
+downloads, verifies, replaces itself and restarts.
 
 **Option B — build from source** (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)):
 

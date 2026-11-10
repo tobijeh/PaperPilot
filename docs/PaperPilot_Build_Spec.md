@@ -20,7 +20,7 @@ There is **no separate reader**. Paper Pilot never displays my script. It reads 
 4. **Never jump away from where I put the page.** Only match against text that's on screen. No whole-document searching.
 5. **Auto never scrolls up.** Only forward (down). Going back is always manual.
 6. **Never steal focus** from the window I'm preaching from.
-7. **Fully offline.** No network calls of any kind, ever.
+7. **Fully offline while in use.** No network calls while Paper Pilot is listening or scrolling. The only network access is the update check/download from GitHub Releases, at startup or when I ask (see Section 13).
 8. **Quiet.** The only visible UI during use is a tiny status pill with no text.
 
 ## 3. Platform and stack
@@ -182,3 +182,9 @@ Build one at a time. After each, stop, tell me how to run it, and list what to t
 **Milestone 5 — Polish.** Settings window in the brand palette, tray icon and menu, Start with Windows, logging, Problem-state detection and recovery, and an installer (MSIX or a simple setup exe). Remove the debug window from normal use (keep it behind a hidden setting).
 
 Test targets throughout: Google Docs in Chrome and Edge at 150–200% zoom, a PDF in Edge, and a Word document.
+
+## 13. Updates (added after Milestone 1)
+
+- Every push to `main` builds a self-contained `PaperPilot.exe` and publishes it as a GitHub release (`v<major.minor>.<build>`).
+- The app checks the latest release once at startup and from a "Check for updates" button. When a newer version exists it shows a banner; "Update now" downloads it, verifies its SHA-256, replaces the exe and restarts.
+- Updates never install by themselves and never run while Paper Pilot is active.

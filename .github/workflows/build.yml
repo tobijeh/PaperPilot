@@ -5,22 +5,54 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write   # needed to publish releases from main
+
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      # Version = <major.minor from version.txt>.<run number>, e.g. 0.1.7. The app compares this
+      # number with the latest GitHub release to decide whether an update is available.
+      - name: Compute version
+        shell: pwsh
+        run: |
+          $prefix = (Get-Content version.txt -Raw).Trim()
+          "VERSION=$prefix.${{ github.run_number }}" >> $env:GITHUB_ENV
+
       - name: Build
-        run: dotnet build PaperPilot.sln -c Release
+        run: dotnet build PaperPilot.sln -c Release -p:Version=${{ env.VERSION }}
+
       - name: Publish (self-contained, single exe)
         run: >
           dotnet publish src/PaperPilot/PaperPilot.csproj -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish
+          -p:EnableCompressionInSingleFile=true -p:DebugType=none
+          -p:Version=${{ env.VERSION }} -o publish
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash publish/PaperPilot.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  PaperPilot.exe" | Out-File -Encoding ascii -NoNewline publish/PaperPilot.exe.sha256
+
       - uses: actions/upload-artifact@v4
         with:
-          name: PaperPilot-win-x64
+          name: PaperPilot-win-x64-${{ env.VERSION }}
           path: publish/
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git log -1 --pretty=%B | Out-File -Encoding utf8 notes.md
+          gh release create "v${{ env.VERSION }}" publish/PaperPilot.exe publish/PaperPilot.exe.sha256 `
+            --title "Paper Pilot ${{ env.VERSION }}" --notes-file notes.md --target "${{ github.sha }}"

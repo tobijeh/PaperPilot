@@ -10,7 +10,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Log.Initialize();
-        Log.Info($"Paper Pilot {typeof(App).Assembly.GetName().Version} starting on {Environment.OSVersion}.");
+        Log.Info($"Paper Pilot {Core.Updater.CurrentVersion} starting on {Environment.OSVersion}.");
+        Core.Updater.OnStartup(e.Args);
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>

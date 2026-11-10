@@ -28,10 +28,12 @@ public partial class DebugWindow : Window
     private BoxOverlayWindow? _overlay;
     private ScreenReadResult? _lastResult;
     private bool _reading;
+    private UpdateInfo? _pendingUpdate;
 
     public DebugWindow()
     {
         InitializeComponent();
+        Title = $"Paper Pilot {Updater.CurrentVersion} — Debug (Milestone 1: See)";
         Log.LineWritten += OnLogLine;
         _autoTimer.Tick += async (_, _) => await ReadOnceAsync();
         Loaded += OnLoaded;
@@ -52,6 +54,65 @@ public partial class DebugWindow : Window
         {
             Log.Error("Startup failed", ex);
             SetStatus("Problem: " + ex.Message, isError: true);
+        }
+
+        // Quietly look for a newer version once at startup (release builds only).
+        if (Updater.IsReleaseBuild)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await CheckForUpdatesAsync(userRequested: false);
+        }
+    }
+
+    // ---- Updates -------------------------------------------------------------------------------
+
+    private async Task CheckForUpdatesAsync(bool userRequested)
+    {
+        CheckUpdatesButton.IsEnabled = false;
+        try
+        {
+            var info = await Updater.CheckAsync();
+            if (info is null)
+            {
+                if (userRequested) SetStatus($"You have the latest version ({Updater.CurrentVersion}).");
+                return;
+            }
+            _pendingUpdate = info;
+            UpdateText.Text = $"Paper Pilot {info.Version} is available (you have {Updater.CurrentVersion}).";
+            UpdateNowButton.IsEnabled = true;
+            UpdateBanner.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Update check failed: {ex.Message}");
+            if (userRequested) SetStatus("Couldn't check for updates (are you online?). " + ex.Message, isError: true);
+        }
+        finally
+        {
+            CheckUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync(userRequested: true);
+
+    private async void UpdateNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingUpdate is null) return;
+        UpdateNowButton.IsEnabled = false;
+        UpdateProgress.Visibility = Visibility.Visible;
+        UpdateText.Text = $"Downloading Paper Pilot {_pendingUpdate.Version}…";
+        try
+        {
+            var progress = new Progress<double>(p => UpdateProgress.Value = p);
+            await Updater.InstallAsync(_pendingUpdate, progress);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Update failed", ex);
+            UpdateText.Text = "Update failed: " + ex.Message;
+            UpdateProgress.Visibility = Visibility.Collapsed;
+            UpdateNowButton.IsEnabled = true;
         }
     }
 
