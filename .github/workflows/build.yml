@@ -57,5 +57,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git log -1 --pretty=%B | Out-File -Encoding utf8 notes.md
-          gh release create "v${{ env.VERSION }}" publish/PaperPilot.exe publish/PaperPilot.exe.sha256 `
-            --title "Paper Pilot ${{ env.VERSION }}" --notes-file notes.md --target "${{ github.sha }}"
+          # GitHub occasionally refuses a release with a transient 403; retry a few times.
+          for ($i = 1; $i -le 4; $i++) {
+            gh release create "v${{ env.VERSION }}" publish/PaperPilot.exe publish/PaperPilot.exe.sha256 `
+              --title "Paper Pilot ${{ env.VERSION }}" --notes-file notes.md --target "${{ github.sha }}"
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            gh release delete "v${{ env.VERSION }}" --yes --cleanup-tag 2>$null
+            Start-Sleep -Seconds (10 * $i)
+          }
+          exit 1
