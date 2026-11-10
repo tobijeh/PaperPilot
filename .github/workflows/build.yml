@@ -29,6 +29,9 @@ jobs:
       - name: Build
         run: dotnet build PaperPilot.sln -c Release -p:Version=${{ env.VERSION }}
 
+      - name: Test
+        run: dotnet test tests/PaperPilot.Core.Tests -c Release
+
       - name: Publish (self-contained, single exe)
         run: >
           dotnet publish src/PaperPilot/PaperPilot.csproj -c Release -r win-x64 --self-contained true
