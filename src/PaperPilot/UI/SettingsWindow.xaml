@@ -1,0 +1,31 @@
+<Window x:Class="PaperPilot.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Paper Pilot — Settings" Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Cream}" Foreground="{StaticResource Navy}"
+        FontFamily="Segoe UI" FontSize="13"
+        Icon="pack://application:,,,/Assets/icon.png">
+    <StackPanel Margin="20">
+        <TextBlock Text="Hotkeys" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <TextBlock TextWrapping="Wrap" Margin="0,0,0,14" Opacity="0.85">
+            Click a field and press the key or combination you want — including a button on your
+            presentation clicker. Hotkeys work while your document has focus and never move focus.
+        </TextBlock>
+
+        <Grid x:Name="HotkeyGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+        </Grid>
+
+        <DockPanel Margin="0,16,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Left" Content="Reset to defaults" Click="Reset_Click" Padding="12,5"
+                    Background="Transparent" Foreground="{StaticResource Navy}" BorderBrush="{StaticResource Periwinkle}" />
+            <Button DockPanel.Dock="Right" Content="Done" Click="Done_Click" Padding="20,5" IsDefault="True"
+                    Background="{StaticResource PilotBlue}" Foreground="White" BorderBrush="{StaticResource DeepBlue}" />
+        </DockPanel>
+    </StackPanel>
+</Window>

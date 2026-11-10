@@ -22,13 +22,20 @@ public partial class App : Application
             args.SetObserved();
         };
 
-        var window = new DebugWindow();
+        _ = Core.WindowCapture.RequestBorderlessAccessAsync();
+        Controller = new Core.AppController();
+
+        // Until the tray icon arrives (Milestone 5) the debug window is the app's main window.
+        var window = new DebugWindow(Controller);
         MainWindow = window;
         window.Show();
     }
 
+    public Core.AppController? Controller { get; private set; }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        Controller?.Dispose();
         Log.Info("Paper Pilot exiting.");
         base.OnExit(e);
     }

@@ -10,51 +10,50 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using PaperPilot.Core;
 using PaperPilot.Diagnostics;
+using PaperPilot.UI;
 
 namespace PaperPilot;
 
 /// <summary>
-/// Milestone 1 debug window: lock onto a window, capture + OCR it, list the lines and their
-/// on-screen rectangles, and optionally draw those rectangles on screen to verify coordinates.
+/// Debug window (hidden behind a setting once Milestone 5 ships): see what Paper Pilot reads,
+/// test scrolling and calibration, and switch the pill through its states.
 /// </summary>
 public partial class DebugWindow : Window
 {
     private const int MaxLogLines = 300;
 
+    private readonly AppController _app;
     private readonly DispatcherTimer _autoTimer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private readonly Queue<string> _logLines = new();
-    private ScreenReader? _reader;
-    private GlobalHotkeys? _hotkeys;
     private BoxOverlayWindow? _overlay;
     private ScreenReadResult? _lastResult;
     private bool _reading;
     private UpdateInfo? _pendingUpdate;
 
-    public DebugWindow()
+    public DebugWindow(AppController app)
     {
+        _app = app;
         InitializeComponent();
-        Title = $"Paper Pilot {Updater.CurrentVersion} — Debug (Milestone 1: See)";
+        Title = $"Paper Pilot {Updater.CurrentVersion} — Debug (Milestone 2: Scroll)";
         Log.LineWritten += OnLogLine;
         _autoTimer.Tick += async (_, _) => await ReadOnceAsync();
+        _app.StateChanged += OnStateChanged;
+        _app.TargetChanged += OnTargetChanged;
+        _app.ManualInputDetected += OnManualInput;
+        _app.Notice += msg => SetStatus(msg, isError: true);
         Loaded += OnLoaded;
         Closed += OnClosed;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        RegisterLockHotkey();
-
-        try
-        {
-            await WindowCapture.RequestBorderlessAccessAsync();
-            _reader = new ScreenReader();
-            SetStatus($"Ready. OCR language: {_reader.OcrLanguage}. Click into your document and press {HotkeyRun.Text}.");
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Startup failed", ex);
-            SetStatus("Problem: " + ex.Message, isError: true);
-        }
+        UpdateHotkeyText();
+        if (_app.Reader is null)
+            SetStatus("Problem: " + (_app.ReaderError ?? "screen reader failed to start."), isError: true);
+        else
+            SetStatus($"Ready. OCR language: {_app.Reader.OcrLanguage}. Click into your document and press {HotkeyRun.Text}.");
+        if (_app.Hotkeys.Errors.Count > 0)
+            SetStatus(string.Join(" ", _app.Hotkeys.Errors.Values) + " Open Hotkeys… to pick another.", isError: true);
 
         // Quietly look for a newer version once at startup (release builds only).
         if (Updater.IsReleaseBuild)
@@ -62,6 +61,130 @@ public partial class DebugWindow : Window
             await Task.Delay(TimeSpan.FromSeconds(3));
             await CheckForUpdatesAsync(userRequested: false);
         }
+    }
+
+    private void UpdateHotkeyText()
+    {
+        var toggle = _app.Settings.Hotkeys.GetValueOrDefault(HotkeyAction.Toggle);
+        HotkeyRun.Text = toggle is null || _app.Hotkeys.Errors.ContainsKey(HotkeyAction.Toggle)
+            ? "your toggle hotkey (none set — open Hotkeys…, or use “Turn on in 3 s”)"
+            : toggle.ToString();
+    }
+
+    // ---- Controller events ---------------------------------------------------------------------
+
+    private void OnStateChanged(PilotState state) => StateText.Text = $"State: {state}";
+
+    private async void OnTargetChanged(TargetWindow? target)
+    {
+        bool on = target is not null;
+        ReadButton.IsEnabled = CalibrateButton.IsEnabled = ScrollButton.IsEnabled = on;
+        ScrollInfo.Text = "Not calibrated.";
+        UpdateTargetText(null);
+        if (!on)
+        {
+            _overlay?.Hide();
+            return;
+        }
+        await ReadOnceAsync();
+    }
+
+    private void OnManualInput(ManualInputKind kind, string detail) =>
+        ManualText.Text = $"Manual input: {detail} at {DateTime.Now:HH:mm:ss.f}";
+
+    private void PillState_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string tag } && Enum.TryParse<PilotState>(tag, out var state))
+            _app.SetStateManually(state);
+    }
+
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        new SettingsWindow(_app) { Owner = this }.ShowDialog();
+        UpdateHotkeyText();
+    }
+
+    // ---- Scrolling tests -----------------------------------------------------------------------
+
+    private async void Calibrate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_app.Reader is null || _app.Target is null) return;
+        if (!await CountdownAsync("Calibrating")) return;
+        CalibrateButton.IsEnabled = false;
+        SetStatus("Calibrating… (one notch down, then back)");
+        try
+        {
+            var result = await _app.Scroller.CalibrateAsync(_app.Reader);
+            ScrollInfo.Text = result.Success ? $"{result.Message}" : "Not calibrated.";
+            SetStatus(result.Success ? "Calibrated: " + result.Message : "Calibration failed: " + result.Message, !result.Success);
+        }
+        finally
+        {
+            CalibrateButton.IsEnabled = _app.Target is not null;
+            await ReadOnceAsync();
+        }
+    }
+
+    private async void Scroll_Click(object sender, RoutedEventArgs e)
+    {
+        if (_app.Reader is null || _app.Target is null) return;
+        if (!int.TryParse(ScrollPxBox.Text, out int px) || px <= 0 || px > 5000)
+        {
+            SetStatus("Enter a number of pixels between 1 and 5000.", isError: true);
+            return;
+        }
+        if (!_app.Scroller.IsCalibrated)
+        {
+            SetStatus("Calibrate first.", isError: true);
+            return;
+        }
+        if (!await CountdownAsync("Scrolling")) return;
+
+        ScrollButton.IsEnabled = false;
+        try
+        {
+            var fgBefore = Interop.NativeMethods.GetForegroundWindow();
+            var before = await _app.Reader.ReadAsync();
+            int delta = -(int)Math.Round(px / _app.Scroller.PixelsPerDelta);
+            int duration = SlowCheck.IsChecked == true ? 5000 : ScrollPlanner.DurationFor(px);
+            var sw = Stopwatch.StartNew();
+
+            SetStatus($"Scrolling {px} px over {duration} ms…");
+            bool completed = await _app.Scroller.ScrollDeltaAsync(delta, duration, _app.Scroller.Method);
+            long elapsed = sw.ElapsedMilliseconds;
+
+            await Task.Delay(500); // let the page settle
+            var after = await _app.Reader.ReadAsync(includeImage: PreviewCheck.IsChecked == true);
+            var fgAfter = Interop.NativeMethods.GetForegroundWindow();
+            var shift = before.IsOk && after.IsOk ? ScrollMeasurer.Measure(before.Lines, after.Lines) : null;
+            if (completed && shift is { } s) _app.Scroller.Refine(delta, s.Pixels);
+
+            string moved = shift is null ? "couldn't measure (page moved too far, or too little text)" : $"moved {shift.Value.Pixels} px";
+            string focus = fgBefore == fgAfter ? "focus unchanged ✓" : "FOCUS CHANGED ✗";
+            SetStatus(completed
+                ? $"Requested {px} px → {moved}. {focus}. ({_app.Scroller.Method})"
+                : $"Stopped by your input after {elapsed} ms → {moved}. {focus}.",
+                isError: fgBefore != fgAfter);
+            Log.Info($"Scroll test: requested {px}px, completed={completed}, {moved}, {focus}.");
+            ScrollInfo.Text = $"{_app.Scroller.Method}: {_app.Scroller.PixelsPerDelta * Scroller.Notch:F0} px per notch.";
+            _lastResult = after;
+            ShowResult(after, PreviewCheck.IsChecked == true);
+        }
+        finally
+        {
+            ScrollButton.IsEnabled = _app.Target is not null;
+        }
+    }
+
+    private async Task<bool> CountdownAsync(string what)
+    {
+        if (DelayCheck.IsChecked != true) return true;
+        for (int i = 3; i > 0; i--)
+        {
+            SetStatus($"{what} in {i}… click into your document now.");
+            await Task.Delay(1000);
+        }
+        return _app.Target is not null;
     }
 
     // ---- Updates -------------------------------------------------------------------------------
@@ -116,83 +239,27 @@ public partial class DebugWindow : Window
         }
     }
 
-    private void RegisterLockHotkey()
-    {
-        _hotkeys = new GlobalHotkeys();
-        // Temporary hotkey for Milestone 1. Milestone 2 makes it customizable.
-        var candidates = new (ModifierKeys mods, Key key)[]
-        {
-            (ModifierKeys.None, Key.F3),
-            (ModifierKeys.Control | ModifierKeys.Shift, Key.F3),
-            (ModifierKeys.Control | ModifierKeys.Alt, Key.P),
-        };
-        foreach (var (mods, key) in candidates)
-        {
-            if (_hotkeys.TryRegister(mods, key, LockOntoForeground, out _, out var error))
-            {
-                HotkeyRun.Text = GlobalHotkeys.Describe(mods, key);
-                return;
-            }
-            SetStatus(error ?? "Hotkey failed.", isError: true);
-        }
-        HotkeyRun.Text = "(no hotkey available — use “Lock in 3 s”)";
-    }
-
-    // ---- Locking onto a window -----------------------------------------------------------------
-
-    private async void LockOntoForeground()
-    {
-        if (_reader is null)
-        {
-            SetStatus("Can't lock yet: the screen reader failed to start (see log).", isError: true);
-            return;
-        }
-
-        var target = TargetWindow.FromForeground(out var reason);
-        if (target is null)
-        {
-            Log.Info($"Lock ignored: {reason}");
-            SetStatus(reason ?? "No window to lock onto.", isError: true);
-            return;
-        }
-
-        try
-        {
-            _reader.Attach(target);
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"Could not start capturing {target}", ex);
-            SetStatus($"Could not capture that window: {ex.Message}", isError: true);
-            return;
-        }
-
-        Log.Info($"Locked onto {target}.");
-        ReadButton.IsEnabled = true;
-        UpdateTargetText(null);
-        await ReadOnceAsync();
-    }
-
     private async void LockDelayedButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_app.State != PilotState.Off) _app.TurnOff();
         for (int i = 3; i > 0; i--)
         {
-            SetStatus($"Click into the window you want to lock onto… {i}");
+            SetStatus($"Click into the window you want Paper Pilot to follow… {i}");
             await Task.Delay(1000);
         }
-        LockOntoForeground();
+        _app.Toggle();
     }
 
     // ---- Reading -------------------------------------------------------------------------------
 
     private async Task ReadOnceAsync()
     {
-        if (_reader?.Target is null || _reading) return;
+        if (_app.Reader?.Target is null || _reading) return;
         _reading = true;
         try
         {
             bool wantImage = PreviewCheck.IsChecked == true;
-            var result = await _reader.ReadAsync(includeImage: wantImage);
+            var result = await _app.Reader.ReadAsync(includeImage: wantImage);
             _lastResult = result;
             ShowResult(result, wantImage);
         }
@@ -239,7 +306,7 @@ public partial class DebugWindow : Window
 
     private void UpdateTargetText(ScreenReadResult? result)
     {
-        var target = _reader?.Target;
+        var target = _app.Target;
         if (target is null)
         {
             TargetText.Text = "No target yet.";
@@ -330,7 +397,7 @@ public partial class DebugWindow : Window
             var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             var txtPath = System.IO.Path.Combine(Log.LogFolder, $"snapshot-{stamp}.txt");
             var sb = new StringBuilder();
-            sb.AppendLine($"Target: {_reader?.Target}");
+            sb.AppendLine($"Target: {_app.Target}");
             sb.AppendLine($"DPI: {r.Dpi}, content: {r.ContentKind} {r.ContentRect}, mapping: {r.Mapping}, downscale x{r.Downscale}");
             foreach (var l in r.Lines)
                 sb.AppendLine($"{l.Index,3}  [{l.Screen}]  {l.Text}");
@@ -384,7 +451,8 @@ public partial class DebugWindow : Window
         Log.LineWritten -= OnLogLine;
         _autoTimer.Stop();
         _overlay?.Close();
-        _hotkeys?.Dispose();
-        _reader?.Dispose();
+        _app.StateChanged -= OnStateChanged;
+        _app.TargetChanged -= OnTargetChanged;
+        _app.ManualInputDetected -= OnManualInput;
     }
 }

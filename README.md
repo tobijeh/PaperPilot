@@ -11,8 +11,8 @@ See [`docs/PaperPilot_Build_Spec.md`](docs/PaperPilot_Build_Spec.md) for the ful
 
 | Milestone | State |
 |---|---|
-| 1 — See (capture + OCR + debug window) | ✅ ready to test |
-| 2 — Scroll | not started |
+| 1 — See (capture + OCR + debug window) | ✅ done |
+| 2 — Scroll (scroller, calibration, manual override, pill, hotkeys) | ✅ ready to test |
 | 3 — Listen | not started |
 | 4 — Match | not started |
 | 5 — Polish | not started |
@@ -34,20 +34,27 @@ downloads, verifies, replaces itself and restarts.
 dotnet run --project src/PaperPilot -c Release
 ```
 
-## Milestone 1 — how to test
+## Milestone 2 — how to test
 
-1. Start Paper Pilot. The debug window opens.
-2. Open your sermon notes in Google Docs (Chrome) at your normal zoom.
-3. Click into the document, then press **F3**. (If another app already owns F3, the debug window
-   tells you which fallback key it used.) Paper Pilot locks onto that window and reads it.
-4. Check:
-   - The line list matches the text on screen.
-   - Tick **Show boxes on screen**: blue boxes should sit exactly on each line of text in the
-     real window. The periwinkle outline should match the document area (no tabs/toolbar).
-   - Tick **Auto-read every 700 ms** and scroll the document by hand: the list and boxes follow.
-   - Repeat on each monitor / scaling you use (100–200%), maximized and not maximized.
-5. If something looks wrong, click **Save snapshot**, then **Open log folder** and send me the
-   newest `snapshot-*.png`, `snapshot-*.txt` and `paperpilot-*.log`.
+1. Start Paper Pilot (it updates itself to the newest version first if you click *Update now*).
+2. Click into your Google Doc and press **F3**. The small pill appears near the top-right of that
+   screen in the soft periwinkle *Holding* colour. Press **F3** again: the pill disappears (off).
+   Turn it back on.
+3. **Calibrate** (leave *Start after 3 s* ticked and click into your document during the countdown).
+   The page moves one wheel notch down and back; the debug window shows pixels per notch.
+4. **Scroll down 200 px**: click into the document during the countdown. The status line should say
+   it moved about 200 px and *focus unchanged ✓*. Try 50, 400 and 800 px too.
+5. **Manual override**: tick *Slow (5 s)*, scroll down ~1000 px, and while it glides use your mouse
+   wheel / touchpad / arrow keys / Page Down / clicker. It must stop instantly and the debug window
+   shows *Manual input: …*. Repeat once per input type.
+6. **Pill**: click *Following / Holding / Paused / Problem*. Check colours, the brief brighten-then-dim,
+   and Problem's dashed outline with one slow pulse. Drag the pill somewhere else: your document must
+   keep focus (keep typing in it). Turn off/on — the pill comes back where you left it.
+7. **Hotkeys…**: change *Turn Paper Pilot on/off* to another key, assign *Nudge down/up* (try your
+   clicker's buttons) and *Pause/resume*. Try a key another app already uses to see the warning.
+   *Reset to defaults* restores F3. Nudges should scroll a notch and count as manual input.
+8. Try Edge, a PDF in Edge and Word too. If something doesn't scroll or measure right, click
+   *Save snapshot* and send me the snapshot files and today's log.
 
 Logs and snapshots live in `%LOCALAPPDATA%\PaperPilot\logs` (kept 7 days, never uploaded).
 
@@ -56,8 +63,12 @@ Logs and snapshots live in `%LOCALAPPDATA%\PaperPilot\logs` (kept 7 days, never 
 ```
 src/PaperPilot/
   Core/         TargetWindow, WindowCapture (Windows.Graphics.Capture), ScreenReader (Windows OCR),
-                GlobalHotkeys, TextNormalizer, data types
+                Scroller, InputMonitor (low-level hooks), TouchpadMonitor (raw HID), HotkeyManager,
+                AppSettings, AppController, Updater
+  UI/           Pill, Settings window
   Interop/      Win32 / WinRT P/Invoke
   Diagnostics/  Log, DebugWindow, on-screen box overlay
-assets/         app icon
+src/PaperPilot.Core/   platform-independent logic (models, normalization, scroll planning/measuring)
+tests/                 unit tests for PaperPilot.Core (`dotnet test`)
+assets/                app icon
 ```

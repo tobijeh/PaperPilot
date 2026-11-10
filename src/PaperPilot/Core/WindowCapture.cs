@@ -14,7 +14,7 @@ namespace PaperPilot.Core;
 /// most recent frame on request. WGC only delivers frames when the window's content changes, so we
 /// always hold on to the newest frame and copy it when asked.
 /// </summary>
-internal sealed class WindowCapture : IDisposable
+public sealed class WindowCapture : IDisposable
 {
     private const DirectXPixelFormat PixelFormat = DirectXPixelFormat.B8G8R8A8UIntNormalized;
     private const int BufferCount = 3;
@@ -198,7 +198,7 @@ internal sealed class WindowCapture : IDisposable
 /// <param name="Bitmap">BGRA8 copy of the frame surface (may be larger than the content).</param>
 /// <param name="ContentWidth">Width of the valid window content inside the bitmap.</param>
 /// <param name="ContentHeight">Height of the valid window content inside the bitmap.</param>
-internal sealed record CapturedFrame(SoftwareBitmap Bitmap, int ContentWidth, int ContentHeight) : IDisposable
+public sealed record CapturedFrame(SoftwareBitmap Bitmap, int ContentWidth, int ContentHeight) : IDisposable
 {
     public void Dispose() => Bitmap.Dispose();
 }

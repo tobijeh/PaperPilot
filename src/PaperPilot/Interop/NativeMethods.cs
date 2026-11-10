@@ -127,6 +127,212 @@ internal static class NativeMethods
     public const uint MOD_WIN = 0x0008;
     public const uint MOD_NOREPEAT = 0x4000;
 
+    // ---- Messages / input injection ----------------------------------------------------------
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    public const int WM_MOUSEWHEEL = 0x020A;
+    public const int WM_MOUSEHWHEEL = 0x020E;
+    public const int WM_LBUTTONDOWN = 0x0201;
+    public const int WM_MBUTTONDOWN = 0x0207;
+    public const int WM_KEYDOWN = 0x0100;
+    public const int WM_SYSKEYDOWN = 0x0104;
+    public const int WM_MOUSEACTIVATE = 0x0021;
+    public const int MA_NOACTIVATE = 3;
+    public const int WM_INPUT = 0x00FF;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx, dy;
+        public int mouseData;
+        public uint dwFlags, time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort wVk, wScan;
+        public uint dwFlags, time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public INPUTUNION u;
+    }
+
+    public const uint INPUT_MOUSE = 0;
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+    public const uint MOUSEEVENTF_ABSOLUTE = 0x8000;
+    public const uint MOUSEEVENTF_VIRTUALDESK = 0x4000;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetCursorPos(out POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT point);
+
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int index);
+    public const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
+
+    // ---- Low-level hooks -------------------------------------------------------------------
+
+    public delegate IntPtr LowLevelProc(int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelProc proc, IntPtr hMod, uint threadId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr GetModuleHandle(string? name);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    public const int WH_KEYBOARD_LL = 13;
+    public const int WH_MOUSE_LL = 14;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSLLHOOKSTRUCT
+    {
+        public POINT pt;
+        public uint mouseData, flags, time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode, scanCode, flags, time;
+        public IntPtr dwExtraInfo;
+    }
+
+    public const uint LLMHF_INJECTED = 0x01;
+    public const uint LLKHF_INJECTED = 0x10;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam, lParam;
+        public uint time;
+        public POINT pt;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern int GetMessage(out MSG msg, IntPtr hwnd, uint min, uint max);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostThreadMessage(uint threadId, uint msg, IntPtr wParam, IntPtr lParam);
+    public const uint WM_QUIT = 0x0012;
+
+    // ---- Raw input (precision touchpad) --------------------------------------------------
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTDEVICE
+    {
+        public ushort usUsagePage, usUsage;
+        public uint dwFlags;
+        public IntPtr hwndTarget;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RAWINPUTHEADER
+    {
+        public uint dwType, dwSize;
+        public IntPtr hDevice, wParam;
+    }
+
+    public const uint RIDEV_INPUTSINK = 0x00000100;
+    public const uint RID_INPUT = 0x10000003;
+    public const uint RIM_TYPEHID = 2;
+    public const uint RIDI_PREPARSEDDATA = 0x20000005;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool RegisterRawInputDevices(RAWINPUTDEVICE[] devices, uint count, uint size);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetRawInputData(IntPtr hRawInput, uint command, IntPtr data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll", EntryPoint = "GetRawInputDeviceInfoW")]
+    public static extern uint GetRawInputDeviceInfo(IntPtr hDevice, uint command, IntPtr data, ref uint size);
+
+    [DllImport("hid.dll")]
+    public static extern int HidP_GetUsageValue(int reportType, ushort usagePage, ushort linkCollection, ushort usage,
+        out uint value, IntPtr preparsedData, IntPtr report, uint reportLength);
+    public const int HIDP_STATUS_SUCCESS = 0x00110000;
+
+    // ---- Monitors ------------------------------------------------------------------------
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor, rcWork;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
+    public const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFOEX info);
+
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    public static (string id, RECT work, uint dpi) GetMonitor(IntPtr monitor)
+    {
+        var info = new MONITORINFOEX { cbSize = Marshal.SizeOf<MONITORINFOEX>() };
+        GetMonitorInfo(monitor, ref info);
+        GetDpiForMonitor(monitor, 0, out var dpi, out _);
+        return ($"{info.szDevice} {info.rcMonitor.Width}x{info.rcMonitor.Height}", info.rcWork, dpi == 0 ? 96 : dpi);
+    }
+
+    /// <summary>The top-level window under a screen point.</summary>
+    public static IntPtr RootWindowFromPoint(POINT pt)
+    {
+        var w = WindowFromPoint(pt);
+        if (w == IntPtr.Zero) return w;
+        var root = GetAncestor(w, GA_ROOT);
+        return root == IntPtr.Zero ? w : root;
+    }
+
     // ---- Helpers -----------------------------------------------------------------------------
 
     public static string GetWindowTitle(IntPtr hwnd)

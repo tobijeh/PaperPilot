@@ -25,6 +25,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PaperPilot.Core\PaperPilot.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="..\..\assets\icon.png" Link="Assets\icon.png" />
   </ItemGroup>
 
