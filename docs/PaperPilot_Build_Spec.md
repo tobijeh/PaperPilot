@@ -21,7 +21,7 @@ There is **no separate reader**. Paper Pilot never displays my script. It reads 
 5. **Auto never scrolls up.** Only forward (down). Going back is always manual.
 6. **Never steal focus** from the window I'm preaching from.
 7. **Fully offline while in use.** No network calls while Paper Pilot is listening or scrolling. The only network access is the update check/download from GitHub Releases, at startup or when I ask (see Section 13).
-8. **Quiet.** The only visible UI during use is a tiny status pill with no text.
+8. **Quiet.** The only visible UI during use is the floating bubble (Section 7.2): the plane, a voice trail, and a brief word when the state changes.
 
 ## 3. Platform and stack
 
@@ -113,14 +113,15 @@ This is the riskiest technical part; validate it early (Milestone 2).
 - Recover from Problem automatically when the cause clears (e.g., mic reconnected).
 - **Debounce:** a state must persist ~1 second before the pill changes (except Paused and Off, which are immediate because I triggered them). No flicker on pauses for breath.
 
-### 7.2 Pill design
-- Tiny rounded pill, roughly 36 × 14 px at 100% scaling, with a 1 px Navy `#0D2768` edge in every state so it reads over white pages and dark mode.
-- **No text, numbers, icons, or transcript.** Shape and color only.
-- Dim by default (~55% opacity). On a state change, brighten to 100% for ~1.5 s, then fade back.
-- Calm animation only: soft cross-fades, no flashing, no red.
-- Always on top. Window styles: `WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`. It must never take focus, including while being dragged.
-- Draggable; position saved per monitor. Default: top-right corner of the target window's monitor, inset from the edge.
-- No buttons. Right-click is not required.
+### 7.2 The bubble (revised after Milestone 2, modelled on Wirl's floating pill)
+- A small rounded bubble at the top of the screen you preach from (top right by default; top centre in settings). Draggable; position saved per monitor. Hidden when Off.
+- **The plane is the indicator.** Its colour shows the state: Paper Pilot Blue `#0059FD` when Following, solid Navy (cream in dark mode) when Holding, **greyed out** `#8A8F98` whenever it isn't listening (Paused, Problem).
+- **Your voice trails behind the plane like a cloud trail:** a soft waveform of the microphone level, newest right behind the tail, drifting back and fading.
+- **Brief words on state changes** ("Listening", "Following", "Holding", "Paused", "Scroll manually"), shown for ~1.5 s and then folded away. Can be switched off.
+- Problem: grey plane and a **dashed** Navy edge.
+- Dim when idle (~55%, adjustable); brightens to 100% for ~1.5 s on a change, then fades back. Calm animation only, no red.
+- Cream bubble with a 1 px Navy edge in light mode, Navy bubble in dark mode (follows Windows).
+- `WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`; never takes focus, including while being dragged. No buttons.
 
 ## 8. Settings window and tray
 
@@ -134,7 +135,9 @@ This is the riskiest technical part; validate it early (Milestone 2).
 
 Use blue as an accent, not as large filled panels. Follow the Windows light/dark setting: light = cream background, navy text; dark = navy background, cream text; blue accents in both.
 
-### 8.2 Settings contents
+### 8.2 Settings contents (Wirl-style: sidebar, one calm page at a time, plain words, no Save buttons)
+Pages: **Home** (big "Paper Pilot is on" card with switch, the hotkey to press, all-set / needs-attention line, summary cards), **Hotkeys**, **Listening**, **Scrolling**, **Bubble** (with a live preview of the bubble), **About** (version, updates, Start with Windows, log folder; clicking the version 7 times unlocks Developer options with the debug window). No preview of what Paper Pilot reads.
+
 - **Hotkeys** (recorder fields for each action, conflict warnings, reset)
 - **Microphone** (device picker, simple input level meter)
 - **Anchor position** (slider, 20–50% from top, default 33%)
@@ -145,7 +148,7 @@ Use blue as an accent, not as large filled panels. Follow the Windows light/dark
 
 ### 8.3 Tray icon
 - Simplified icon: plane silhouette (wing and body only) in cream on Paper Pilot Blue, legible at 16 px. The full icon (`assets/icon.png`) is used only for the app icon and large sizes.
-- Tray menu: Settings, Open log folder, Quit.
+- Tray menu: "Paper Pilot is on" (master switch: off releases the hotkeys), Settings, Check for updates / Restart to update, Quit. Left-click opens Settings. Grey icon when switched off; a small dot when something needs attention or an update is ready.
 
 ## 9. Logging
 
@@ -186,5 +189,5 @@ Test targets throughout: Google Docs in Chrome and Edge at 150–200% zoom, a PD
 ## 13. Updates (added after Milestone 1)
 
 - Every push to `main` builds a self-contained `PaperPilot.exe` and publishes it as a GitHub release (`v<major.minor>.<build>`).
-- The app checks the latest release once at startup and from a "Check for updates" button. When a newer version exists it shows a banner; "Update now" downloads it, verifies its SHA-256, replaces the exe and restarts.
+- The app checks on launch and once a day (never while Paper Pilot is on), downloads a newer version in the background and verifies its SHA-256. It installs when you choose "Restart to update" (tray or About) or when you quit.
 - Updates never install by themselves and never run while Paper Pilot is active.

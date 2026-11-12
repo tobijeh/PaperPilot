@@ -82,39 +82,37 @@ public static class Updater
         return new UpdateInfo(latest, tag, exeUrl, exeSize, shaUrl, notes);
     }
 
-    /// <summary>
-    /// Downloads the new exe, swaps it in place of the running one and starts it. The caller
-    /// should shut the app down right after this returns.
-    /// </summary>
-    public static async Task InstallAsync(UpdateInfo info, IProgress<double>? progress, CancellationToken ct = default)
+    /// <summary>True when this copy can replace itself (a published PaperPilot.exe, not a dev build).</summary>
+    public static bool CanSelfUpdate =>
+        IsReleaseBuild && Environment.ProcessPath is { } p
+        && Path.GetFileName(p).Equals(ExeAssetName, StringComparison.OrdinalIgnoreCase);
+
+    private static string StagedPath => Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, "PaperPilot.exe.new");
+
+    /// <summary>Downloads and verifies the new exe next to the running one (as PaperPilot.exe.new).</summary>
+    public static async Task DownloadAsync(UpdateInfo info, IProgress<double>? progress, CancellationToken ct = default)
     {
-        var currentExe = Environment.ProcessPath;
-        if (currentExe is null || !Path.GetFileName(currentExe).Equals(ExeAssetName, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("This copy is running from a development build and can't update itself. Download the latest PaperPilot.exe instead.");
+        if (!CanSelfUpdate)
+            throw new InvalidOperationException("This copy can't update itself. Download the latest PaperPilot.exe instead.");
 
-        var dir = Path.GetDirectoryName(currentExe)!;
-        var newExe = Path.Combine(dir, "PaperPilot.exe.new");
-        var oldExe = Path.Combine(dir, "PaperPilot.exe.old");
-
-        // ---- Download ------------------------------------------------------------------------
+        var newExe = StagedPath;
+        var dir = Path.GetDirectoryName(newExe)!;
         Log.Info($"Update: downloading {info.Tag} ({info.ExeSize / 1024 / 1024} MB).");
         try
         {
-            using (var resp = await Http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct))
+            using var resp = await Http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            resp.EnsureSuccessStatusCode();
+            long total = resp.Content.Headers.ContentLength ?? info.ExeSize;
+            await using var src = await resp.Content.ReadAsStreamAsync(ct);
+            await using var dst = File.Create(newExe);
+            var buffer = new byte[81920];
+            long done = 0;
+            int read;
+            while ((read = await src.ReadAsync(buffer, ct)) > 0)
             {
-                resp.EnsureSuccessStatusCode();
-                long total = resp.Content.Headers.ContentLength ?? info.ExeSize;
-                await using var src = await resp.Content.ReadAsStreamAsync(ct);
-                await using var dst = File.Create(newExe);
-                var buffer = new byte[81920];
-                long done = 0;
-                int read;
-                while ((read = await src.ReadAsync(buffer, ct)) > 0)
-                {
-                    await dst.WriteAsync(buffer.AsMemory(0, read), ct);
-                    done += read;
-                    if (total > 0) progress?.Report((double)done / total);
-                }
+                await dst.WriteAsync(buffer.AsMemory(0, read), ct);
+                done += read;
+                if (total > 0) progress?.Report((double)done / total);
             }
         }
         catch (UnauthorizedAccessException)
@@ -122,11 +120,10 @@ public static class Updater
             throw new InvalidOperationException($"Paper Pilot can't write to {dir}. Move PaperPilot.exe to a folder you own (e.g. Documents) and try again.");
         }
 
-        // ---- Verify ----------------------------------------------------------------------------
         if (info.ExeSize > 0 && new FileInfo(newExe).Length != info.ExeSize)
         {
             File.Delete(newExe);
-            throw new InvalidOperationException("The download was incomplete. Please try again.");
+            throw new InvalidOperationException("The download was incomplete. Paper Pilot will try again later.");
         }
         if (info.Sha256Url is not null)
         {
@@ -137,26 +134,47 @@ public static class Updater
             if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(newExe);
-                throw new InvalidOperationException("The download didn't pass its integrity check. Please try again.");
+                throw new InvalidOperationException("The download didn't pass its integrity check. Paper Pilot will try again later.");
             }
         }
+        Log.Info($"Update: {info.Tag} downloaded and verified; installs on restart or quit.");
+    }
 
-        // ---- Swap and restart --------------------------------------------------------------
-        // Windows lets us rename a running exe, so: current -> .old, new -> current.
-        if (File.Exists(oldExe)) File.Delete(oldExe);
-        File.Move(currentExe, oldExe);
+    /// <summary>
+    /// Swaps the staged exe into place (Windows allows renaming a running exe). With
+    /// <paramref name="restart"/>, starts the new version; the caller then shuts down.
+    /// </summary>
+    public static bool ApplyStaged(bool restart)
+    {
+        if (!CanSelfUpdate) return false;
+        var currentExe = Environment.ProcessPath!;
+        var newExe = StagedPath;
+        if (!File.Exists(newExe)) return false;
+        var oldExe = Path.Combine(Path.GetDirectoryName(currentExe)!, "PaperPilot.exe.old");
         try
         {
-            File.Move(newExe, currentExe);
+            if (File.Exists(oldExe)) File.Delete(oldExe);
+            File.Move(currentExe, oldExe);
+            try
+            {
+                File.Move(newExe, currentExe);
+            }
+            catch
+            {
+                File.Move(oldExe, currentExe); // roll back
+                throw;
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            File.Move(oldExe, currentExe); // roll back
-            throw;
+            Log.Error("Update: install failed", ex);
+            return false;
         }
 
-        Log.Info($"Update: installed {info.Tag}, restarting.");
-        Process.Start(new ProcessStartInfo(currentExe, $"{WaitForPidArg} {Environment.ProcessId}") { UseShellExecute = false });
+        Log.Info($"Update: installed{(restart ? ", restarting" : " (takes effect next start)")}.");
+        if (restart)
+            Process.Start(new ProcessStartInfo(currentExe, $"{WaitForPidArg} {Environment.ProcessId}") { UseShellExecute = false });
+        return true;
     }
 
     /// <summary>
@@ -183,7 +201,7 @@ public static class Updater
         var exe = Environment.ProcessPath;
         if (exe is null) return;
         var dir = Path.GetDirectoryName(exe)!;
-        foreach (var leftover in new[] { "PaperPilot.exe.old", "PaperPilot.exe.new" })
+        foreach (var leftover in new[] { "PaperPilot.exe.old" })
         {
             try { File.Delete(Path.Combine(dir, leftover)); }
             catch { /* still locked; next start will get it */ }

@@ -1,17 +1,53 @@
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
+using PaperPilot.Core;
 using PaperPilot.Diagnostics;
+using PaperPilot.UI;
 
 namespace PaperPilot;
 
+/// <summary>
+/// Paper Pilot lives in the tray. Settings opens on the very first launch, from the tray, or when
+/// you start Paper Pilot again while it's already running. The bubble is the only thing on
+/// screen while it's on.
+/// </summary>
 public partial class App : Application
 {
+    private const string InstanceName = "Local\\PaperPilot.SingleInstance";
+    private const string ShowSettingsSignal = "Local\\PaperPilot.ShowSettings";
+
+    private Mutex? _instance;
+    private EventWaitHandle? _showSignal;
+    private TrayIcon? _tray;
+    private SettingsWindow? _settingsWindow;
+    private DebugWindow? _debugWindow;
+
+    public AppController? Controller { get; private set; }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         Log.Initialize();
-        Log.Info($"Paper Pilot {Core.Updater.CurrentVersion} starting on {Environment.OSVersion}.");
-        Core.Updater.OnStartup(e.Args);
+        Log.Info($"Paper Pilot {Updater.CurrentVersion} starting on {Environment.OSVersion}.");
+        Updater.OnStartup(e.Args); // after an update: wait for the old copy to exit first
+
+        // One copy at a time. Starting it again just opens Settings in the running copy.
+        _instance = new Mutex(initiallyOwned: true, InstanceName, out bool first);
+        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSettingsSignal);
+        if (!first)
+        {
+            Log.Info("Already running; asking the running copy to open Settings.");
+            _showSignal.Set();
+            Shutdown();
+            return;
+        }
+        var listener = new Thread(() =>
+        {
+            while (_showSignal.WaitOne())
+                Dispatcher.BeginInvoke(() => ShowSettings());
+        }) { IsBackground = true, Name = "PaperPilot show-settings" };
+        listener.Start();
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -22,20 +58,68 @@ public partial class App : Application
             args.SetObserved();
         };
 
-        _ = Core.WindowCapture.RequestBorderlessAccessAsync();
-        Controller = new Core.AppController();
+        ThemeManager.Initialize(Resources);
+        System.Windows.Forms.Application.EnableVisualStyles(); // modern look for the tray menu
+        _ = WindowCapture.RequestBorderlessAccessAsync();
+        Controller = new AppController();
+        Controller.Notice += msg => Log.Info($"Notice: {msg}");
+        _tray = new TrayIcon(Controller, () => ShowSettings(), Quit);
 
-        // Until the tray icon arrives (Milestone 5) the debug window is the app's main window.
-        var window = new DebugWindow(Controller);
-        MainWindow = window;
-        window.Show();
+        bool background = e.Args.Contains(StartWithWindows.BackgroundArg) || e.Args.Contains(Updater.WaitForPidArg);
+        if (!Controller.Settings.FirstRunDone)
+        {
+            Controller.Settings.FirstRunDone = true;
+            Controller.Settings.Save();
+            ShowSettings();
+        }
+        else if (!background || Controller.Attention.Count > 0)
+        {
+            ShowSettings();
+        }
+        if (Controller.Settings.DeveloperOptions && Controller.Settings.ShowDebugWindow) ShowDebug();
     }
 
-    public Core.AppController? Controller { get; private set; }
+    public void ShowSettings(SettingsWindow.PageId page = SettingsWindow.PageId.Home)
+    {
+        if (Controller is null) return;
+        if (_settingsWindow is null)
+        {
+            _settingsWindow = new SettingsWindow(Controller, ShowDebug, page);
+            _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow.Show();
+        }
+        else
+        {
+            _settingsWindow.ShowPage(page);
+        }
+        if (_settingsWindow.WindowState == WindowState.Minimized) _settingsWindow.WindowState = WindowState.Normal;
+        _settingsWindow.Activate();
+    }
+
+    private void ShowDebug()
+    {
+        if (Controller is null) return;
+        if (_debugWindow is null)
+        {
+            _debugWindow = new DebugWindow(Controller);
+            _debugWindow.Closed += (_, _) => _debugWindow = null;
+            _debugWindow.Show();
+        }
+        _debugWindow.Activate();
+    }
+
+    private void Quit()
+    {
+        Log.Info("Quit from the tray.");
+        Shutdown();
+    }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _tray?.Dispose();
+        Controller?.Updates.InstallOnExit();
         Controller?.Dispose();
+        _instance?.Dispose();
         Log.Info("Paper Pilot exiting.");
         base.OnExit(e);
     }

@@ -28,7 +28,8 @@ public sealed class AppController : IDisposable
         UpdateIgnoredKeys();
 
         Scroller = new Scroller();
-        Pill = new PillWindow(Settings);
+        Bubble = new BubbleWindow(Settings);
+        Updates = new UpdateService(isBusy: () => State != PilotState.Off);
 
         try
         {
@@ -46,7 +47,8 @@ public sealed class AppController : IDisposable
     public InputMonitor Input { get; }
     public TouchpadMonitor Touchpad { get; }
     public Scroller Scroller { get; }
-    public PillWindow Pill { get; }
+    public BubbleWindow Bubble { get; }
+    public UpdateService Updates { get; }
     public ScreenReader? Reader { get; }
     public string? ReaderError { get; }
 
@@ -59,13 +61,45 @@ public sealed class AppController : IDisposable
     public event Action<ManualInputKind, string>? ManualInputDetected;
     /// <summary>Messages worth showing the user (e.g. "can't lock onto Paper Pilot itself").</summary>
     public event Action<string>? Notice;
+    /// <summary>Anything shown in Settings or the tray changed (enabled, state, hotkeys, attention).</summary>
+    public event Action? Changed;
+
+    /// <summary>Things the user needs to fix, in plain words (empty = all set).</summary>
+    public IReadOnlyList<string> Attention
+    {
+        get
+        {
+            var items = new List<string>();
+            if (ReaderError is not null) items.Add(ReaderError);
+            foreach (var (action, error) in Hotkeys.Errors)
+                items.Add(error);
+            if (Settings.Enabled && Settings.Hotkeys.GetValueOrDefault(HotkeyAction.Toggle) is null)
+                items.Add("There's no hotkey to turn Paper Pilot on. Set one under Hotkeys.");
+            return items;
+        }
+    }
+
+    /// <summary>Master switch (tray "Paper Pilot is on"). Off: hotkeys released, nothing runs.</summary>
+    public void SetEnabled(bool enabled)
+    {
+        if (Settings.Enabled == enabled) return;
+        Settings.Enabled = enabled;
+        Settings.Save();
+        if (!enabled && State != PilotState.Off) TurnOff();
+        ApplyHotkeys();
+        Log.Info($"Paper Pilot {(enabled ? "enabled" : "disabled")}.");
+        Changed?.Invoke();
+    }
 
     // ---- Hotkeys -------------------------------------------------------------------------------
 
     public void ApplyHotkeys()
     {
-        Hotkeys.Apply(Settings.Hotkeys);
+        Hotkeys.Apply(Settings.Enabled
+            ? Settings.Hotkeys
+            : new Dictionary<HotkeyAction, HotkeyBinding?>());
         UpdateIgnoredKeys();
+        Changed?.Invoke();
     }
 
     private void UpdateIgnoredKeys() =>
@@ -121,7 +155,7 @@ public sealed class AppController : IDisposable
         }
         Log.Info($"Activated on {target}.");
         TargetChanged?.Invoke(target);
-        SetState(PilotState.Holding);
+        SetState(PilotState.Holding, "Listening");
     }
 
     public void TurnOff()
@@ -140,7 +174,7 @@ public sealed class AppController : IDisposable
         if (State == PilotState.Off) return;
         if (State == PilotState.Paused)
         {
-            SetState(PilotState.Holding);
+            SetState(PilotState.Holding, "Listening");
         }
         else
         {
@@ -171,13 +205,24 @@ public sealed class AppController : IDisposable
         SetState(state);
     }
 
-    private void SetState(PilotState state)
+    /// <summary>The brief word the bubble shows when it enters a state.</summary>
+    public static string WordFor(PilotState state) => state switch
+    {
+        PilotState.Following => "Following",
+        PilotState.Holding => "Holding",
+        PilotState.Paused => "Paused",
+        PilotState.Problem => "Scroll manually",
+        _ => "",
+    };
+
+    private void SetState(PilotState state, string? word = null)
     {
         if (State == state) return;
         Log.Info($"State: {State} -> {state}.");
         State = state;
-        Pill.SetState(state, Target?.Hwnd ?? IntPtr.Zero);
+        Bubble.SetState(state, word ?? WordFor(state), Target?.Hwnd ?? IntPtr.Zero);
         StateChanged?.Invoke(state);
+        Changed?.Invoke();
     }
 
     // ---- Manual override -----------------------------------------------------------------------
@@ -196,7 +241,7 @@ public sealed class AppController : IDisposable
     public void Dispose()
     {
         Scroller.CancelNow();
-        Pill.Close();
+        Bubble.Close();
         Touchpad.Dispose();
         Input.Dispose();
         Hotkeys.Dispose();

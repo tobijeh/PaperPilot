@@ -10,6 +10,8 @@
     <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon). -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -20,9 +22,17 @@
     <Product>Paper Pilot</Product>
     <Version>0.1.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WPF app: per-monitor DPI v2 is set in app.manifest on purpose (the WinForms hint does not apply). -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- Lets the project build on non-Windows machines (CI, dev containers). Harmless on Windows. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is only used for the tray icon; keep its names out of every file. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PaperPilot.Core\PaperPilot.Core.csproj" />
@@ -30,6 +40,7 @@
 
   <ItemGroup>
     <Resource Include="..\..\assets\icon.png" Link="Assets\icon.png" />
+    <Resource Include="..\..\assets\fonts\*.ttf" LinkBase="Assets\Fonts" />
   </ItemGroup>
 
 </Project>

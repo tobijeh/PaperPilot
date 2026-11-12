@@ -28,24 +28,33 @@ public partial class DebugWindow : Window
     private BoxOverlayWindow? _overlay;
     private ScreenReadResult? _lastResult;
     private bool _reading;
-    private UpdateInfo? _pendingUpdate;
+    private readonly DispatcherTimer _voiceTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    private readonly Random _rng = new();
+    private double _voicePhase;
 
     public DebugWindow(AppController app)
     {
         _app = app;
         InitializeComponent();
-        Title = $"Paper Pilot {Updater.CurrentVersion} — Debug (Milestone 2: Scroll)";
+        Title = $"Paper Pilot {Updater.CurrentVersion} — Debug";
         Log.LineWritten += OnLogLine;
         _autoTimer.Tick += async (_, _) => await ReadOnceAsync();
         _app.StateChanged += OnStateChanged;
         _app.TargetChanged += OnTargetChanged;
         _app.ManualInputDetected += OnManualInput;
         _app.Notice += msg => SetStatus(msg, isError: true);
+        _app.Changed += UpdateHotkeyText;
+        _voiceTimer.Tick += (_, _) =>
+        {
+            // Speech-like bursts, so the bubble's trail can be checked before the microphone arrives.
+            _voicePhase += 0.3 + _rng.NextDouble() * 0.12;
+            _app.Bubble.PushLevel(Math.Max(0, Math.Sin(_voicePhase)) * (0.4 + _rng.NextDouble() * 0.6));
+        };
         Loaded += OnLoaded;
         Closed += OnClosed;
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
         UpdateHotkeyText();
         if (_app.Reader is null)
@@ -55,12 +64,6 @@ public partial class DebugWindow : Window
         if (_app.Hotkeys.Errors.Count > 0)
             SetStatus(string.Join(" ", _app.Hotkeys.Errors.Values) + " Open Hotkeys… to pick another.", isError: true);
 
-        // Quietly look for a newer version once at startup (release builds only).
-        if (Updater.IsReleaseBuild)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(3));
-            await CheckForUpdatesAsync(userRequested: false);
-        }
     }
 
     private void UpdateHotkeyText()
@@ -92,6 +95,12 @@ public partial class DebugWindow : Window
     private void OnManualInput(ManualInputKind kind, string detail) =>
         ManualText.Text = $"Manual input: {detail} at {DateTime.Now:HH:mm:ss.f}";
 
+    private void SimulateVoice_Changed(object sender, RoutedEventArgs e)
+    {
+        if (SimulateVoiceCheck.IsChecked == true) _voiceTimer.Start();
+        else _voiceTimer.Stop();
+    }
+
     private void PillState_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: string tag } && Enum.TryParse<PilotState>(tag, out var state))
@@ -100,8 +109,7 @@ public partial class DebugWindow : Window
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
-        new SettingsWindow(_app) { Owner = this }.ShowDialog();
-        UpdateHotkeyText();
+        ((App)Application.Current).ShowSettings(SettingsWindow.PageId.Hotkeys);
     }
 
     // ---- Scrolling tests -----------------------------------------------------------------------
@@ -185,58 +193,6 @@ public partial class DebugWindow : Window
             await Task.Delay(1000);
         }
         return _app.Target is not null;
-    }
-
-    // ---- Updates -------------------------------------------------------------------------------
-
-    private async Task CheckForUpdatesAsync(bool userRequested)
-    {
-        CheckUpdatesButton.IsEnabled = false;
-        try
-        {
-            var info = await Updater.CheckAsync();
-            if (info is null)
-            {
-                if (userRequested) SetStatus($"You have the latest version ({Updater.CurrentVersion}).");
-                return;
-            }
-            _pendingUpdate = info;
-            UpdateText.Text = $"Paper Pilot {info.Version} is available (you have {Updater.CurrentVersion}).";
-            UpdateNowButton.IsEnabled = true;
-            UpdateBanner.Visibility = Visibility.Visible;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"Update check failed: {ex.Message}");
-            if (userRequested) SetStatus("Couldn't check for updates (are you online?). " + ex.Message, isError: true);
-        }
-        finally
-        {
-            CheckUpdatesButton.IsEnabled = true;
-        }
-    }
-
-    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await CheckForUpdatesAsync(userRequested: true);
-
-    private async void UpdateNow_Click(object sender, RoutedEventArgs e)
-    {
-        if (_pendingUpdate is null) return;
-        UpdateNowButton.IsEnabled = false;
-        UpdateProgress.Visibility = Visibility.Visible;
-        UpdateText.Text = $"Downloading Paper Pilot {_pendingUpdate.Version}…";
-        try
-        {
-            var progress = new Progress<double>(p => UpdateProgress.Value = p);
-            await Updater.InstallAsync(_pendingUpdate, progress);
-            Application.Current.Shutdown();
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Update failed", ex);
-            UpdateText.Text = "Update failed: " + ex.Message;
-            UpdateProgress.Visibility = Visibility.Collapsed;
-            UpdateNowButton.IsEnabled = true;
-        }
     }
 
     private async void LockDelayedButton_Click(object sender, RoutedEventArgs e)
@@ -454,5 +410,7 @@ public partial class DebugWindow : Window
         _app.StateChanged -= OnStateChanged;
         _app.TargetChanged -= OnTargetChanged;
         _app.ManualInputDetected -= OnManualInput;
+        _app.Changed -= UpdateHotkeyText;
+        _voiceTimer.Stop();
     }
 }

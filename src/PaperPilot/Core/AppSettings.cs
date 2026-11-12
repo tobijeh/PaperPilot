@@ -19,7 +19,23 @@ public enum PillSize
     Medium,
 }
 
-/// <summary>Saved pill position on one monitor, as a fraction of that monitor's work area.</summary>
+public enum BubblePosition
+{
+    TopRight,
+    TopCenter,
+}
+
+public enum NudgeSize
+{
+    Small,
+    Medium,
+    Large,
+}
+
+/// <summary>
+/// Saved bubble position on one monitor, as fractions of that monitor's work area:
+/// X = the bubble's right edge, Y = its top.
+/// </summary>
 public sealed record PillPosition(double X, double Y);
 
 /// <summary>User settings, stored as JSON in %LOCALAPPDATA%\PaperPilot\settings.json.</summary>
@@ -30,14 +46,34 @@ public sealed class AppSettings
     /// <summary>Where the current line should sit, as a fraction of the window height (0.20–0.50).</summary>
     public double AnchorFraction { get; set; } = 0.33;
 
+    /// <summary>On = hotkeys are active. Off = Paper Pilot ignores its hotkeys until switched back on.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Settings opens by itself on the very first launch only.</summary>
+    public bool FirstRunDone { get; set; }
+
+    public bool StartWithWindows { get; set; }
+
     public PillSize PillSize { get; set; } = PillSize.Small;
     public double PillIdleOpacity { get; set; } = 0.55;
+    public BubblePosition BubblePosition { get; set; } = BubblePosition.TopRight;
+    public bool ShowStateWords { get; set; } = true;
     public Dictionary<string, PillPosition> PillPositions { get; set; } = new();
 
-    /// <summary>Wheel delta for one nudge (120 = one mouse-wheel notch).</summary>
-    public int NudgeWheelDelta { get; set; } = 120;
+    public NudgeSize NudgeSize { get; set; } = NudgeSize.Medium;
 
-    public bool ShowDebugWindow { get; set; } = true;
+    /// <summary>Wheel delta for one nudge (120 = one mouse-wheel notch).</summary>
+    [JsonIgnore]
+    public int NudgeWheelDelta => NudgeSize switch
+    {
+        NudgeSize.Small => 60,
+        NudgeSize.Large => 240,
+        _ => 120,
+    };
+
+    /// <summary>Developer options: unlocked by clicking the version in About seven times.</summary>
+    public bool DeveloperOptions { get; set; }
+    public bool ShowDebugWindow { get; set; }
 
     public static Dictionary<HotkeyAction, HotkeyBinding?> DefaultHotkeys() => new()
     {

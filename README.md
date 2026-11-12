@@ -12,7 +12,8 @@ See [`docs/PaperPilot_Build_Spec.md`](docs/PaperPilot_Build_Spec.md) for the ful
 | Milestone | State |
 |---|---|
 | 1 — See (capture + OCR + debug window) | ✅ done |
-| 2 — Scroll (scroller, calibration, manual override, pill, hotkeys) | ✅ ready to test |
+| 2 — Scroll (scroller, calibration, manual override, pill, hotkeys) | ✅ done |
+| 2.5 — Wirl-style UX (tray, bubble with plane + voice trail, clean settings, background updates) | ✅ ready to test |
 | 3 — Listen | not started |
 | 4 — Match | not started |
 | 5 — Polish | not started |
@@ -24,9 +25,9 @@ See [`docs/PaperPilot_Build_Spec.md`](docs/PaperPilot_Build_Spec.md) for the ful
 in a folder you own, e.g. `Documents\PaperPilot`. Windows SmartScreen may warn because the exe isn't
 signed yet: *More info → Run anyway*.
 
-**Updates:** every push to `main` publishes a new release. Paper Pilot checks once at startup (and
-via *Check for updates*); when a newer version exists a banner appears — click *Update now* and it
-downloads, verifies, replaces itself and restarts.
+**Updates:** every push to `main` publishes a new release. Paper Pilot checks on launch and once a
+day (never while it's on), downloads in the background, and installs when you choose *Restart to
+update* (tray menu or Settings › About) or when you quit.
 
 **Option B — build from source** (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)):
 
@@ -34,27 +35,22 @@ downloads, verifies, replaces itself and restarts.
 dotnet run --project src/PaperPilot -c Release
 ```
 
-## Milestone 2 — how to test
+## Milestone 2.5 — how to test
 
-1. Start Paper Pilot (it updates itself to the newest version first if you click *Update now*).
-2. Click into your Google Doc and press **F3**. The small pill appears near the top-right of that
-   screen in the soft periwinkle *Holding* colour. Press **F3** again: the pill disappears (off).
-   Turn it back on.
-3. **Calibrate** (leave *Start after 3 s* ticked and click into your document during the countdown).
-   The page moves one wheel notch down and back; the debug window shows pixels per notch.
-4. **Scroll down 200 px**: click into the document during the countdown. The status line should say
-   it moved about 200 px and *focus unchanged ✓*. Try 50, 400 and 800 px too.
-5. **Manual override**: tick *Slow (5 s)*, scroll down ~1000 px, and while it glides use your mouse
-   wheel / touchpad / arrow keys / Page Down / clicker. It must stop instantly and the debug window
-   shows *Manual input: …*. Repeat once per input type.
-6. **Pill**: click *Following / Holding / Paused / Problem*. Check colours, the brief brighten-then-dim,
-   and Problem's dashed outline with one slow pulse. Drag the pill somewhere else: your document must
-   keep focus (keep typing in it). Turn off/on — the pill comes back where you left it.
-7. **Hotkeys…**: change *Turn Paper Pilot on/off* to another key, assign *Nudge down/up* (try your
-   clicker's buttons) and *Pause/resume*. Try a key another app already uses to see the warning.
-   *Reset to defaults* restores F3. Nudges should scroll a notch and count as manual input.
-8. Try Edge, a PDF in Edge and Word too. If something doesn't scroll or measure right, click
-   *Save snapshot* and send me the snapshot files and today's log.
+Paper Pilot now lives in the **tray** (the blue plane by the clock). Left-click it for Settings,
+right-click for the menu.
+
+1. **Settings** opens the first time. Check Home, Hotkeys, Scrolling, Bubble and About in light and
+   dark mode (Windows Settings › Personalization › Colors).
+2. Click into your sermon notes and press **F3**. The **bubble** appears at the top right of that
+   screen with the word *Listening*, then folds down to the plane. Press F3 again: it disappears.
+3. **Bubble page**: the preview cycles through the states. Try Size, Position, the words switch
+   and idle brightness, and drag the real bubble somewhere else (your notes must keep focus).
+4. **Tray menu**: untick *Paper Pilot is on*: the icon turns grey and F3 goes back to Chrome.
+5. **Updates**: the next release after this one should appear as *Restart to update* in the tray
+   and About. Use it (or quit Paper Pilot) and check the new version starts.
+6. The Milestone 2 scroll tests now live in the **debug window**: Settings › About, click the
+   version 7 times, then *Open*. Tick *Simulate voice* there to see the trail move behind the plane.
 
 Logs and snapshots live in `%LOCALAPPDATA%\PaperPilot\logs` (kept 7 days, never uploaded).
 
@@ -65,10 +61,10 @@ src/PaperPilot/
   Core/         TargetWindow, WindowCapture (Windows.Graphics.Capture), ScreenReader (Windows OCR),
                 Scroller, InputMonitor (low-level hooks), TouchpadMonitor (raw HID), HotkeyManager,
                 AppSettings, AppController, Updater
-  UI/           Pill, Settings window
+  UI/           Bubble (plane + voice trail), tray icon, Settings window, theme and styles
   Interop/      Win32 / WinRT P/Invoke
   Diagnostics/  Log, DebugWindow, on-screen box overlay
 src/PaperPilot.Core/   platform-independent logic (models, normalization, scroll planning/measuring)
 tests/                 unit tests for PaperPilot.Core (`dotnet test`)
-assets/                app icon
+assets/                app icon, Manrope font (OFL, same as Wirl)
 ```
