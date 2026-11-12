@@ -58,14 +58,34 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        try
+        {
+            StartApp(e.Args);
+        }
+        catch (Exception ex)
+        {
+            // Never fail silently: say what happened and quit cleanly.
+            Log.Error("Startup failed", ex);
+            MessageBox.Show(
+                $"Paper Pilot couldn't start.\n\n{ex.Message}\n\nThe details are in the log folder:\n{Log.LogFolder}",
+                "Paper Pilot", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown(1);
+        }
+    }
+
+    private void StartApp(string[] args)
+    {
+        Log.Info("Startup: theme.");
         ThemeManager.Initialize(Resources);
         System.Windows.Forms.Application.EnableVisualStyles(); // modern look for the tray menu
         _ = WindowCapture.RequestBorderlessAccessAsync();
+        Log.Info("Startup: components.");
         Controller = new AppController();
         Controller.Notice += msg => Log.Info($"Notice: {msg}");
+        Log.Info("Startup: tray icon.");
         _tray = new TrayIcon(Controller, () => ShowSettings(), Quit);
 
-        bool background = e.Args.Contains(StartWithWindows.BackgroundArg) || e.Args.Contains(Updater.WaitForPidArg);
+        bool background = args.Contains(StartWithWindows.BackgroundArg) || args.Contains(Updater.WaitForPidArg);
         if (!Controller.Settings.FirstRunDone)
         {
             Controller.Settings.FirstRunDone = true;
@@ -77,6 +97,7 @@ public partial class App : Application
             ShowSettings();
         }
         if (Controller.Settings.DeveloperOptions && Controller.Settings.ShowDebugWindow) ShowDebug();
+        Log.Info("Startup: ready.");
     }
 
     public void ShowSettings(SettingsWindow.PageId page = SettingsWindow.PageId.Home)
@@ -84,6 +105,7 @@ public partial class App : Application
         if (Controller is null) return;
         if (_settingsWindow is null)
         {
+            Log.Info("Opening Settings.");
             _settingsWindow = new SettingsWindow(Controller, ShowDebug, page);
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
             _settingsWindow.Show();

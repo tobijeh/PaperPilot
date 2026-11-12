@@ -39,6 +39,38 @@ jobs:
           -p:EnableCompressionInSingleFile=true -p:DebugType=none
           -p:Version=${{ env.VERSION }} -o publish
 
+      # Start the real exe on the runner's desktop, give it time, then check the log says it got
+      # all the way through startup. A screenshot is kept so the UI can be looked at.
+      - name: Smoke test (launch the exe)
+        shell: pwsh
+        run: |
+          $logDir = Join-Path $env:LOCALAPPDATA "PaperPilot\logs"
+          Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "PaperPilot") -ErrorAction SilentlyContinue
+          $p = Start-Process -FilePath publish/PaperPilot.exe -PassThru
+          Start-Sleep -Seconds 25
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          New-Item -ItemType Directory -Force smoke | Out-Null
+          $bmp.Save("smoke/screen.png")
+          $alive = -not $p.HasExited
+          if ($alive) { Stop-Process -Id $p.Id -Force }
+          Write-Host "Process still running after 25 s: $alive"
+          Get-ChildItem $logDir -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName } | Tee-Object smoke/log.txt
+          $log = Get-Content smoke/log.txt -Raw -ErrorAction SilentlyContinue
+          if (-not $alive -or -not $log -or $log -notmatch "Startup: ready" -or $log -match "ERROR") {
+            Write-Error "Paper Pilot did not start cleanly."
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ env.VERSION }}
+          path: smoke/
+
       - name: Checksum
         shell: pwsh
         run: |
