@@ -18,6 +18,7 @@ public sealed class BubbleView : Border
     private readonly TextBlock _word;
     private readonly Border _wordClip;
     private readonly DispatcherTimer _wordTimer = new();
+    private readonly System.Windows.Shapes.Rectangle _dash;
     private PilotState _state = PilotState.Holding;
 
     public BubbleView()
@@ -36,7 +37,17 @@ public sealed class BubbleView : Border
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(_wordClip);
         row.Children.Add(_art);
-        Child = row;
+
+        // Problem's dashed edge: a shape that stretches with the bubble (Border can't dash).
+        _dash = new System.Windows.Shapes.Rectangle
+        {
+            StrokeThickness = 1.25,
+            StrokeDashArray = new DoubleCollection { 3, 2 },
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+        };
+        _dash.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "BubbleEdge");
+        Child = new Grid { Children = { row, _dash } };
 
         SetResourceReference(BackgroundProperty, "BubbleBg");
         SetResourceReference(BorderBrushProperty, "BubbleEdge");
@@ -64,6 +75,8 @@ public sealed class BubbleView : Border
         Padding = new Thickness(h * 0.36, 0, h * 0.28, 0);
         _art.Height = h - 6;
         _art.Width = (h - 6) * 2.9;
+        _dash.Margin = new Thickness(-Padding.Left - 1, -1, -Padding.Right - 1, -1);
+        _dash.RadiusX = _dash.RadiusY = h / 2;
         _word.FontSize = size == PillSize.Medium ? 14 : 12;
     }
 
@@ -75,9 +88,7 @@ public sealed class BubbleView : Border
         _state = state;
         _art.SetState(state);
         bool dashed = state == PilotState.Problem;
-        BorderThickness = new Thickness(dashed ? 1.25 : 1);
-        // A dashed edge can't be drawn by Border; the art draws it instead.
-        _art.DashedEdge = dashed;
+        _dash.Visibility = dashed ? Visibility.Visible : Visibility.Collapsed;
         if (dashed) BorderBrush = Brushes.Transparent;
         else SetResourceReference(BorderBrushProperty, "BubbleEdge");
 
@@ -120,8 +131,6 @@ public sealed class BubbleView : Border
             };
             IsVisibleChanged += (_, _) => { if (!IsVisible) { _timer.Stop(); _trail.Clear(); } };
         }
-
-        public bool DashedEdge { get; set; }
 
         public void PushLevel(double level)
         {
@@ -198,15 +207,6 @@ public sealed class BubbleView : Border
             // ---- Plane ---------------------------------------------------------------------
             PlaneGlyph.Draw(dc, new SolidColorBrush(planeColor), new Rect(planeX, 0, planeSize, planeSize));
 
-            // ---- Dashed edge for Problem (drawn around the whole bubble by the parent's size) --
-            if (DashedEdge && VisualTreeHelper.GetParent(this) is FrameworkElement row
-                && VisualTreeHelper.GetParent(row) is BubbleView bubble)
-            {
-                var pen = new Pen(new SolidColorBrush(ThemeManager.Get("BubbleEdge")), 1.25) { DashStyle = new DashStyle(new double[] { 3, 2 }, 0) };
-                var origin = TranslatePoint(new Point(0, 0), bubble);
-                var r = new Rect(-origin.X + 0.6, -origin.Y + 0.6, bubble.ActualWidth - 1.2, bubble.ActualHeight - 1.2);
-                dc.DrawRoundedRectangle(null, pen, r, r.Height / 2, r.Height / 2);
-            }
         }
 
         /// <summary>Catmull-Rom → Bézier control points through the given points (skipping the first).</summary>

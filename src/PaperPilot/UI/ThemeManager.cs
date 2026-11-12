@@ -35,7 +35,7 @@ public static class ThemeManager
         ("Text2", Color.FromRgb(0x4D, 0x5C, 0x86), Color.FromRgb(0xB9, 0xC4, 0xE2)),
         ("Accent", Blue, Blue),
         ("AccentHover", DeepBlue, Color.FromRgb(0x2B, 0x74, 0xFF)),
-        ("AccentSoft", Color.FromArgb(0x1C, 0x00, 0x59, 0xFD), Color.FromArgb(0x40, 0x00, 0x59, 0xFD)),
+        ("AccentSoft", Color.FromRgb(0xDC, 0xE6, 0xFE), Color.FromArgb(0x40, 0x00, 0x59, 0xFD)),
         ("OnAccent", Colors.White, Colors.White),
         ("Link", Blue, Periwinkle),
         ("Attention", DeepBlue, Periwinkle),
