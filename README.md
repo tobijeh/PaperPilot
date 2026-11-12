@@ -18,18 +18,23 @@ See [`docs/PaperPilot_Build_Spec.md`](docs/PaperPilot_Build_Spec.md) for the ful
 | 4 — Match | not started |
 | 5 — Polish | not started |
 
-## Running it
+## Installing
 
-**Option A — download the exe.** Grab `PaperPilot.exe` from the newest
-[release](https://github.com/tobijeh/PaperPilot/releases/latest) (no .NET install needed) and put it
-in a folder you own, e.g. `Documents\PaperPilot`. Windows SmartScreen may warn because the exe isn't
-signed yet: *More info → Run anyway*.
+Download **PaperPilot-Setup.exe** from the
+[latest release](https://github.com/tobijeh/PaperPilot/releases/latest) and run it. It installs for
+your Windows user only (no administrator needed) into `%LOCALAPPDATA%\Programs\Paper Pilot`, adds
+Paper Pilot to the Start menu, and lists it in **Settings › Apps › Installed apps**, where you can
+uninstall it. Windows may say *"Windows protected your PC"* the first time, because Paper Pilot isn't
+code-signed: click **More info**, then **Run anyway**.
 
-**Updates:** every push to `main` publishes a new release. Paper Pilot checks on launch and once a
-day (never while it's on), downloads in the background, and installs when you choose *Restart to
-update* (tray menu or Settings › About) or when you quit.
+**Updates:** Paper Pilot checks on launch and once a day (never while it's on) and downloads the next
+version in the background. When it's ready, choose **Restart to update** (Home page, About page or
+the tray menu); it closes, installs and opens again in a few seconds. If you just quit, it installs
+quietly instead. Your settings are kept.
 
-**Option B — build from source** (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)):
+Each release also has a plain `PaperPilot.exe` for running without installing.
+
+**Build from source** (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)):
 
 ```
 dotnet run --project src/PaperPilot -c Release

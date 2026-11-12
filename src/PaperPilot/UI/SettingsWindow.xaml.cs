@@ -148,6 +148,14 @@ public partial class SettingsWindow : Window
         var page = new StackPanel();
         page.Children.Add(Card(status));
 
+        if (_app.Updates.Status == UpdateStatus.Ready)
+        {
+            page.Children.Add(Card(Row(
+                Stack(Text("Update ready", style: "H3"),
+                    Muted($"Version {_app.Updates.Available?.Version} is downloaded. Restart Paper Pilot to finish; it takes a few seconds.")),
+                Primary("Restart to update", RestartToUpdate))));
+        }
+
         var grid = new UniformGrid { Columns = 2, Margin = new Thickness(-6, 0, -6, 0) };
         grid.Children.Add(SummaryCard(PageId.Hotkeys, "Hotkeys", toggle is null ? "No on/off hotkey yet" : $"{toggle} turns it on and off"));
         grid.Children.Add(SummaryCard(PageId.Listening, "Listening", "Microphone arrives in the next update"));
@@ -400,16 +408,12 @@ public partial class SettingsWindow : Window
             UpdateStatus.Checking => "Checking…",
             UpdateStatus.UpToDate => "You have the latest version.",
             UpdateStatus.Failed => u.Error ?? "Couldn't check for updates.",
-            UpdateStatus.NotAvailable => "This copy can't update itself. Download the latest PaperPilot.exe from GitHub.",
+            UpdateStatus.NotAvailable => "This copy can't update itself. Install Paper Pilot with PaperPilot-Setup.exe from GitHub.",
             _ => "Paper Pilot checks once a day, and never while it's on.",
         };
         Button? updateButton = u.Status switch
         {
-            UpdateStatus.Ready => Primary("Restart to update", () =>
-            {
-                if (_app.State != PilotState.Off) _app.TurnOff();
-                if (_app.Updates.RestartToUpdate()) Application.Current.Shutdown();
-            }),
+            UpdateStatus.Ready => Primary("Restart to update", RestartToUpdate),
             UpdateStatus.Idle or UpdateStatus.UpToDate or UpdateStatus.Failed => Plain("Check now", () => _ = _app.Updates.CheckAsync(userRequested: true)),
             _ => null,
         };
@@ -448,6 +452,12 @@ public partial class SettingsWindow : Window
             page.Children.Add(Card(dev));
         }
         return page;
+    }
+
+    private void RestartToUpdate()
+    {
+        if (_app.State != PilotState.Off) _app.TurnOff();
+        if (_app.Updates.RestartToUpdate()) Application.Current.Shutdown();
     }
 
     // ===== Hotkey recorder ========================================================================

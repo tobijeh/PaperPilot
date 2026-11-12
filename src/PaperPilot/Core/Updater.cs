@@ -7,17 +7,25 @@ using PaperPilot.Diagnostics;
 
 namespace PaperPilot.Core;
 
-public sealed record UpdateInfo(Version Version, string Tag, string ExeUrl, long ExeSize, string? Sha256Url, string Notes);
+/// <summary>One downloadable file of a release, with its checksum file if published.</summary>
+public sealed record ReleaseAsset(string Url, long Size, string? Sha256Url);
+
+/// <param name="Exe">The single PaperPilot.exe (for copies run without installing).</param>
+/// <param name="Setup">PaperPilot-Setup.exe (for installed copies).</param>
+public sealed record UpdateInfo(Version Version, string Tag, ReleaseAsset? Exe, ReleaseAsset? Setup, string Notes);
 
 /// <summary>
 /// Self-update from GitHub Releases. Network is only touched when a check or install is
 /// explicitly started (app startup / "Check for updates"), never while Paper Pilot is flying.
+/// Installed copies (the normal case) download the next PaperPilot-Setup.exe and run it silently;
+/// a copy run without installing swaps its own exe.
 /// </summary>
 public static class Updater
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/tobijeh/PaperPilot/releases/latest";
     private const string ExeAssetName = "PaperPilot.exe";
-    private const string ShaAssetName = "PaperPilot.exe.sha256";
+    private const string SetupAssetName = "PaperPilot-Setup.exe";
+    private const string SetupArgs = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-";
     public const string WaitForPidArg = "--wait-for-pid";
 
     private static readonly HttpClient Http = CreateClient();
@@ -66,45 +74,57 @@ public static class Updater
         }
         latest = new Version(latest.Major, latest.Minor, Math.Max(0, latest.Build));
 
-        string? exeUrl = null, shaUrl = null;
-        long exeSize = 0;
+        var urls = new Dictionary<string, (string url, long size)>();
         foreach (var asset in root.GetProperty("assets").EnumerateArray())
         {
-            var name = asset.GetProperty("name").GetString();
-            var url = asset.GetProperty("browser_download_url").GetString();
-            if (name == ExeAssetName) { exeUrl = url; exeSize = asset.GetProperty("size").GetInt64(); }
-            else if (name == ShaAssetName) shaUrl = url;
+            var name = asset.GetProperty("name").GetString() ?? "";
+            urls[name] = (asset.GetProperty("browser_download_url").GetString() ?? "", asset.GetProperty("size").GetInt64());
         }
+        ReleaseAsset? Find(string name) => urls.TryGetValue(name, out var a)
+            ? new ReleaseAsset(a.url, a.size, urls.TryGetValue(name + ".sha256", out var h) ? h.url : null)
+            : null;
         var notes = root.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "";
 
+        var info = new UpdateInfo(latest, tag, Find(ExeAssetName), Find(SetupAssetName), notes);
         Log.Info($"Update: current {CurrentVersion}, latest {latest} ({tag}).");
-        if (latest <= CurrentVersion || exeUrl is null) return null;
-        return new UpdateInfo(latest, tag, exeUrl, exeSize, shaUrl, notes);
+        if (latest <= CurrentVersion || AssetFor(info) is null) return null;
+        return info;
     }
 
-    /// <summary>True when this copy can replace itself (a published PaperPilot.exe, not a dev build).</summary>
+    /// <summary>Installed with PaperPilot-Setup.exe (the uninstaller sits next to the exe).</summary>
+    public static bool IsInstalled =>
+        Environment.ProcessPath is { } p && File.Exists(Path.Combine(Path.GetDirectoryName(p)!, "unins000.exe"));
+
+    /// <summary>True when this copy can update itself (a published build, installed or a plain PaperPilot.exe).</summary>
     public static bool CanSelfUpdate =>
         IsReleaseBuild && Environment.ProcessPath is { } p
-        && Path.GetFileName(p).Equals(ExeAssetName, StringComparison.OrdinalIgnoreCase);
+        && (IsInstalled || Path.GetFileName(p).Equals(ExeAssetName, StringComparison.OrdinalIgnoreCase));
 
-    private static string StagedPath => Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, "PaperPilot.exe.new");
+    private static ReleaseAsset? AssetFor(UpdateInfo info) => IsInstalled ? info.Setup : info.Exe;
 
-    /// <summary>Downloads and verifies the new exe next to the running one (as PaperPilot.exe.new).</summary>
+    /// <summary>Where the downloaded update waits until it's installed.</summary>
+    public static string StagedPath => IsInstalled
+        ? Path.Combine(Log.AppDataFolder, "updates", SetupAssetName)
+        : Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, "PaperPilot.exe.new");
+
+    /// <summary>Downloads and verifies the update (the new setup, or the new exe), ready to install.</summary>
     public static async Task DownloadAsync(UpdateInfo info, IProgress<double>? progress, CancellationToken ct = default)
     {
         if (!CanSelfUpdate)
-            throw new InvalidOperationException("This copy can't update itself. Download the latest PaperPilot.exe instead.");
+            throw new InvalidOperationException("This copy can't update itself. Install Paper Pilot with PaperPilot-Setup.exe instead.");
+        var asset = AssetFor(info) ?? throw new InvalidOperationException("This release has nothing to install for this copy.");
 
-        var newExe = StagedPath;
-        var dir = Path.GetDirectoryName(newExe)!;
-        Log.Info($"Update: downloading {info.Tag} ({info.ExeSize / 1024 / 1024} MB).");
+        var path = StagedPath;
+        var dir = Path.GetDirectoryName(path)!;
+        Log.Info($"Update: downloading {info.Tag} ({asset.Size / 1024 / 1024} MB, {(IsInstalled ? "setup" : "exe")}).");
         try
         {
-            using var resp = await Http.GetAsync(info.ExeUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            Directory.CreateDirectory(dir);
+            using var resp = await Http.GetAsync(asset.Url, HttpCompletionOption.ResponseHeadersRead, ct);
             resp.EnsureSuccessStatusCode();
-            long total = resp.Content.Headers.ContentLength ?? info.ExeSize;
+            long total = resp.Content.Headers.ContentLength ?? asset.Size;
             await using var src = await resp.Content.ReadAsStreamAsync(ct);
-            await using var dst = File.Create(newExe);
+            await using var dst = File.Create(path);
             var buffer = new byte[81920];
             long done = 0;
             int read;
@@ -117,23 +137,23 @@ public static class Updater
         }
         catch (UnauthorizedAccessException)
         {
-            throw new InvalidOperationException($"Paper Pilot can't write to {dir}. Move PaperPilot.exe to a folder you own (e.g. Documents) and try again.");
+            throw new InvalidOperationException($"Paper Pilot can't write to {dir}. Install it with PaperPilot-Setup.exe and try again.");
         }
 
-        if (info.ExeSize > 0 && new FileInfo(newExe).Length != info.ExeSize)
+        if (asset.Size > 0 && new FileInfo(path).Length != asset.Size)
         {
-            File.Delete(newExe);
+            File.Delete(path);
             throw new InvalidOperationException("The download was incomplete. Paper Pilot will try again later.");
         }
-        if (info.Sha256Url is not null)
+        if (asset.Sha256Url is not null)
         {
-            var expected = (await Http.GetStringAsync(info.Sha256Url, ct)).Trim().Split(' ', '\t')[0];
+            var expected = (await Http.GetStringAsync(asset.Sha256Url, ct)).Trim().Split(' ', '\t')[0];
             string actual;
-            await using (var fs = File.OpenRead(newExe))
+            await using (var fs = File.OpenRead(path))
                 actual = Convert.ToHexString(await SHA256.HashDataAsync(fs, ct));
             if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
-                File.Delete(newExe);
+                File.Delete(path);
                 throw new InvalidOperationException("The download didn't pass its integrity check. Paper Pilot will try again later.");
             }
         }
@@ -141,15 +161,33 @@ public static class Updater
     }
 
     /// <summary>
-    /// Swaps the staged exe into place (Windows allows renaming a running exe). With
-    /// <paramref name="restart"/>, starts the new version; the caller then shuts down.
+    /// Installs the downloaded update. Installed copies run the new setup silently (it waits for
+    /// Paper Pilot to close, installs, and with <paramref name="restart"/> starts it again).
+    /// Plain-exe copies swap the exe (Windows allows renaming a running exe). The caller then quits.
     /// </summary>
     public static bool ApplyStaged(bool restart)
     {
         if (!CanSelfUpdate) return false;
+        var staged = StagedPath;
+        if (!File.Exists(staged)) return false;
+
+        if (IsInstalled)
+        {
+            try
+            {
+                var args = SetupArgs + (restart ? "" : " /nolaunch=1");
+                Process.Start(new ProcessStartInfo(staged, args) { UseShellExecute = true });
+                Log.Info($"Update: running setup ({args}).");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Update: could not start the setup", ex);
+                return false;
+            }
+        }
+
         var currentExe = Environment.ProcessPath!;
-        var newExe = StagedPath;
-        if (!File.Exists(newExe)) return false;
         var oldExe = Path.Combine(Path.GetDirectoryName(currentExe)!, "PaperPilot.exe.old");
         try
         {
@@ -157,7 +195,7 @@ public static class Updater
             File.Move(currentExe, oldExe);
             try
             {
-                File.Move(newExe, currentExe);
+                File.Move(staged, currentExe);
             }
             catch
             {
@@ -197,6 +235,10 @@ public static class Updater
             }
             Log.Info($"Update: now running {CurrentVersion}.");
         }
+
+        // A setup left over from an update that has now been installed.
+        try { File.Delete(Path.Combine(Log.AppDataFolder, "updates", SetupAssetName)); }
+        catch { /* ignore */ }
 
         var exe = Environment.ProcessPath;
         if (exe is null) return;

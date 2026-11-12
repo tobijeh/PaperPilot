@@ -85,6 +85,9 @@ public partial class App : Application
         Log.Info("Startup: tray icon.");
         _tray = new TrayIcon(Controller, () => ShowSettings(), Quit);
 
+        // Keep "Start with Windows" pointing at this copy (e.g. after moving to the installed one).
+        if (Controller.Settings.StartWithWindows) StartWithWindows.Apply(true);
+
         bool background = args.Contains(StartWithWindows.BackgroundArg) || args.Contains(Updater.WaitForPidArg);
         if (!Controller.Settings.FirstRunDone)
         {

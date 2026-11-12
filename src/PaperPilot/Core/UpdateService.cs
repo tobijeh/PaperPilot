@@ -29,6 +29,7 @@ public sealed class UpdateService
     private readonly Func<bool> _isBusy;
     private readonly DispatcherTimer _timer = new();
     private bool _running;
+    private bool _applied; // the update has been handed to the installer; never twice
 
     public UpdateService(Func<bool> isBusy)
     {
@@ -40,8 +41,15 @@ public sealed class UpdateService
             return;
         }
         // A finished download from last time that never got installed.
-        var staged = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath!)!, "PaperPilot.exe.new");
-        if (File.Exists(staged)) File.Delete(staged); // we can't verify its version; fetch fresh
+        try
+        {
+            var staged = Updater.StagedPath;
+            if (File.Exists(staged)) File.Delete(staged); // we can't verify its version; fetch fresh
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"Update: could not remove an old download ({ex.Message}).");
+        }
         Schedule(FirstCheck);
     }
 
@@ -123,12 +131,17 @@ public sealed class UpdateService
     }
 
     /// <summary>Installs the downloaded version and restarts into it. Returns false if it couldn't.</summary>
-    public bool RestartToUpdate() => Status == UpdateStatus.Ready && Updater.ApplyStaged(restart: true);
+    public bool RestartToUpdate()
+    {
+        if (_applied || Status != UpdateStatus.Ready) return false;
+        _applied = Updater.ApplyStaged(restart: true);
+        return _applied;
+    }
 
     /// <summary>Called when Paper Pilot quits: a downloaded update is put in place for next time.</summary>
     public void InstallOnExit()
     {
-        if (Status == UpdateStatus.Ready) Updater.ApplyStaged(restart: false);
+        if (!_applied && Status == UpdateStatus.Ready) _applied = Updater.ApplyStaged(restart: false);
     }
 
     private void Set(UpdateStatus status)

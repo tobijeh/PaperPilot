@@ -188,6 +188,6 @@ Test targets throughout: Google Docs in Chrome and Edge at 150–200% zoom, a PD
 
 ## 13. Updates (added after Milestone 1)
 
-- Every push to `main` builds a self-contained `PaperPilot.exe` and publishes it as a GitHub release (`v<major.minor>.<build>`).
-- The app checks on launch and once a day (never while Paper Pilot is on), downloads a newer version in the background and verifies its SHA-256. It installs when you choose "Restart to update" (tray or About) or when you quit.
+- Every push to `main` builds a normal Windows installer, `PaperPilot-Setup.exe` (per-user, no admin, Start menu entry, listed in Installed apps with Uninstall), plus a plain `PaperPilot.exe`, and publishes them as a GitHub release (`v<major.minor>.<build>`). CI installs, runs and uninstalls the setup before releasing.
+- The app checks on launch and once a day (never while Paper Pilot is on), downloads a newer version in the background and verifies its SHA-256. It installs when you choose "Restart to update" (Home, About or the tray) — the app closes, the new setup runs silently and the app reopens — or silently when you quit.
 - Updates never install by themselves and never run while Paper Pilot is active.

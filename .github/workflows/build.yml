@@ -39,24 +39,45 @@ jobs:
           -p:EnableCompressionInSingleFile=true -p:DebugType=none
           -p:Version=${{ env.VERSION }} -o publish
 
-      # Start the real exe on the runner's desktop, give it time, then check the log says it got
-      # all the way through startup. A screenshot is kept so the UI can be looked at.
-      - name: Smoke test (launch the exe)
+      - name: Build installer (Inno Setup)
         shell: pwsh
         run: |
-          $logDir = Join-Path $env:LOCALAPPDATA "PaperPilot\logs"
-          Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "PaperPilot") -ErrorAction SilentlyContinue
-          $p = Start-Process -FilePath publish/PaperPilot.exe -ArgumentList "--smoke-test" -PassThru
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          & $iscc /Qp "/DAppVersion=${{ env.VERSION }}" installer\PaperPilot.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item publish\PaperPilot-Setup.exe | Format-Table Name, Length
+
+      # Install with the real setup (silently, as the in-app updater does), run the installed app
+      # through every Settings page and bubble state, then uninstall. Fails the build (so nothing is
+      # released) if any step goes wrong. Pictures and the log are kept as an artifact.
+      - name: Smoke test (install, run, uninstall)
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA "PaperPilot"
+          $logDir = Join-Path $data "logs"
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Paper Pilot"
+          Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force smoke | Out-Null
+
+          $s = Start-Process publish\PaperPilot-Setup.exe -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /nolaunch=1" -PassThru -Wait
+          Write-Host "Setup exit code: $($s.ExitCode)"
+          $exe = Join-Path $app "PaperPilot.exe"
+          $uninstall = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall |
+            Get-ItemProperty | Where-Object DisplayName -eq "Paper Pilot"
+          Write-Host "Installed exe: $(Test-Path $exe); Installed apps entry: $($uninstall.DisplayName) $($uninstall.DisplayVersion)"
+          if ($s.ExitCode -ne 0 -or -not (Test-Path $exe) -or -not $uninstall) { Write-Error "Install failed."; exit 1 }
+
+          $p = Start-Process -FilePath $exe -ArgumentList "--smoke-test" -PassThru
           Start-Sleep -Seconds 25
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
           $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
           $g = [System.Drawing.Graphics]::FromImage($bmp)
           $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
-          New-Item -ItemType Directory -Force smoke | Out-Null
           $bmp.Save("smoke/screen.png")
           $alive = -not $p.HasExited
-          if ($alive) { Stop-Process -Id $p.Id -Force }
+          if ($alive) { Stop-Process -Id $p.Id -Force; Start-Sleep -Seconds 1 }
           Write-Host "Process still running after 25 s: $alive"
           Copy-Item (Join-Path $logDir "smoke-*.png") smoke/ -ErrorAction SilentlyContinue
           Get-ChildItem $logDir -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName } | Tee-Object smoke/log.txt
@@ -66,22 +87,32 @@ jobs:
             exit 1
           }
 
+          $u = Start-Process (Join-Path $app "unins000.exe") -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
+          Start-Sleep -Seconds 3
+          Write-Host "Uninstall exit code: $($u.ExitCode); exe still there: $(Test-Path $exe)"
+          if ($u.ExitCode -ne 0 -or (Test-Path $exe)) { Write-Error "Uninstall failed."; exit 1 }
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke-${{ env.VERSION }}
           path: smoke/
 
-      - name: Checksum
+      - name: Checksums
         shell: pwsh
         run: |
-          $hash = (Get-FileHash publish/PaperPilot.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  PaperPilot.exe" | Out-File -Encoding ascii -NoNewline publish/PaperPilot.exe.sha256
+          foreach ($f in "PaperPilot.exe", "PaperPilot-Setup.exe") {
+            $hash = (Get-FileHash "publish/$f" -Algorithm SHA256).Hash.ToLower()
+            "$hash  $f" | Out-File -Encoding ascii -NoNewline "publish/$f.sha256"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: PaperPilot-win-x64-${{ env.VERSION }}
-          path: publish/
+          path: |
+            publish/PaperPilot-Setup.exe
+            publish/PaperPilot.exe
+            publish/*.sha256
 
       - name: Publish GitHub release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -89,10 +120,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git log -1 --pretty=%B | Out-File -Encoding utf8 notes.md
+          $commit = git log -1 --pretty=%B
+          @"
+          **Install:** download **PaperPilot-Setup.exe** below and run it. (Windows may say "Windows protected your PC" because Paper Pilot isn't code-signed: click *More info*, then *Run anyway*.) Already installed? Paper Pilot updates itself: use *Restart to update*.
+
+          ---
+          $commit
+          "@ | Out-File -Encoding utf8 notes.md
           # GitHub occasionally refuses a release with a transient 403; retry a few times.
           for ($i = 1; $i -le 4; $i++) {
-            gh release create "v${{ env.VERSION }}" publish/PaperPilot.exe publish/PaperPilot.exe.sha256 `
+            gh release create "v${{ env.VERSION }}" `
+              publish/PaperPilot-Setup.exe publish/PaperPilot-Setup.exe.sha256 `
+              publish/PaperPilot.exe publish/PaperPilot.exe.sha256 `
               --title "Paper Pilot ${{ env.VERSION }}" --notes-file notes.md --target "${{ github.sha }}"
             if ($LASTEXITCODE -eq 0) { exit 0 }
             gh release delete "v${{ env.VERSION }}" --yes --cleanup-tag 2>$null
