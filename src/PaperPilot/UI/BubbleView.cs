@@ -189,7 +189,7 @@ public sealed class BubbleView : Border
                 c.BeginFigure(top[0], true, true);
                 c.PolyBezierTo(Smooth(top), true, true);
                 c.LineTo(bottom[n - 1], true, true);
-                var rev = bottom.Reverse().ToArray();
+                var rev = Enumerable.Reverse(bottom).ToArray();
                 c.PolyBezierTo(Smooth(rev), true, true);
             }
             geo.Freeze();
