@@ -98,7 +98,10 @@ public partial class App : Application
         }
         if (Controller.Settings.DeveloperOptions && Controller.Settings.ShowDebugWindow) ShowDebug();
         Log.Info("Startup: ready.");
+        if (args.Contains("--smoke-test")) _ = Diagnostics.SmokeTest.RunAsync(this, Controller);
     }
+
+    public SettingsWindow? SettingsWindowForTests => _settingsWindow;
 
     public void ShowSettings(SettingsWindow.PageId page = SettingsWindow.PageId.Home)
     {

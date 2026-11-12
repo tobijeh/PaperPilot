@@ -46,7 +46,7 @@ jobs:
         run: |
           $logDir = Join-Path $env:LOCALAPPDATA "PaperPilot\logs"
           Remove-Item -Recurse -Force (Join-Path $env:LOCALAPPDATA "PaperPilot") -ErrorAction SilentlyContinue
-          $p = Start-Process -FilePath publish/PaperPilot.exe -PassThru
+          $p = Start-Process -FilePath publish/PaperPilot.exe -ArgumentList "--smoke-test" -PassThru
           Start-Sleep -Seconds 25
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -58,9 +58,10 @@ jobs:
           $alive = -not $p.HasExited
           if ($alive) { Stop-Process -Id $p.Id -Force }
           Write-Host "Process still running after 25 s: $alive"
+          Copy-Item (Join-Path $logDir "smoke-*.png") smoke/ -ErrorAction SilentlyContinue
           Get-ChildItem $logDir -Filter *.log -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName } | Tee-Object smoke/log.txt
           $log = Get-Content smoke/log.txt -Raw -ErrorAction SilentlyContinue
-          if (-not $alive -or -not $log -or $log -notmatch "Startup: ready" -or $log -match "ERROR") {
+          if (-not $alive -or -not $log -or $log -notmatch "Startup: ready" -or $log -notmatch "Smoke: done" -or $log -match "ERROR") {
             Write-Error "Paper Pilot did not start cleanly."
             exit 1
           }
